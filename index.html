@@ -470,12 +470,21 @@ function renderVisitsList() {
   }).join('');
 }
 
+let reportEverOpened = false;
+
 function renderReportList() {
   const reportList = document.getElementById('reportList');
   if (state.visits.length === 0) {
     reportList.innerHTML = '<div class="empty-state">Nenhuma visita para selecionar.</div>';
+    updateSummary();
     return;
   }
+
+  if (!reportEverOpened) {
+    reportEverOpened = true;
+    state.selectedVisits = new Set(state.visits.map(function(_, i) { return i; }));
+  }
+
   reportList.innerHTML = state.visits.map(function(visit, idx) {
     const d = new Date(visit.dateTime);
     const isSelected = state.selectedVisits.has(idx);
@@ -664,30 +673,42 @@ function buildPdf(visits, title, filename, periodLine) {
   doc.line(20, y, pageWidth - 20, y);
   y += 8;
 
+  const colDate = 20;
+  const colKm = pageWidth - 55;
+
+  doc.setFontSize(10);
+  doc.setFont(undefined, 'bold');
+  doc.text('Data/Hora', colDate, y);
+  doc.text('Distância', colKm, y);
+  y += 5;
+  doc.setDrawColor(220);
+  doc.line(20, y, pageWidth - 20, y);
+  y += 5;
+
   let totalKm = 0;
-  visits.forEach(function(visit, idx) {
-    if (y > pageHeight - 30) { doc.addPage(); y = 20; }
-    totalKm += visit.distance || 0;
-
-    doc.setFontSize(11);
-    doc.setFont(undefined, 'bold');
-    doc.text((idx + 1) + '. ' + visit.fromLocationName + ' -> ' + visit.locationName, 20, y);
-    y += 6;
-
-    doc.setFontSize(9);
-    doc.setFont(undefined, 'normal');
-    doc.text('Data/hora: ' + new Date(visit.dateTime).toLocaleString('pt-BR'), 22, y);
-    y += 4;
-    doc.text('Distância desde o local anterior: ' + (visit.distance || 0).toFixed(2) + ' km', 22, y);
-    y += 4;
-    if (visit.notes) {
-      doc.text('Obs: ' + visit.notes, 22, y);
-      y += 4;
+  doc.setFont(undefined, 'normal');
+  visits.forEach(function(visit) {
+    if (y > pageHeight - 30) {
+      doc.addPage();
+      y = 20;
+      doc.setFontSize(10);
+      doc.setFont(undefined, 'bold');
+      doc.text('Data/Hora', colDate, y);
+      doc.text('Distância', colKm, y);
+      y += 5;
+      doc.line(20, y, pageWidth - 20, y);
+      y += 5;
+      doc.setFont(undefined, 'normal');
     }
-    y += 4;
+    totalKm += (visit.distance || 0);
+
+    doc.setFontSize(10);
+    doc.text(new Date(visit.dateTime).toLocaleString('pt-BR'), colDate, y);
+    doc.text((visit.distance || 0).toFixed(2) + ' km', colKm, y);
+    y += 7;
   });
 
-  if (y > pageHeight - 20) { doc.addPage(); y = 20; }
+  y += 3;
   doc.setDrawColor(200);
   doc.line(20, y, pageWidth - 20, y);
   y += 8;
@@ -695,7 +716,8 @@ function buildPdf(visits, title, filename, periodLine) {
   doc.setFontSize(12);
   doc.setFont(undefined, 'bold');
   doc.text('Total de quilometragem: ' + totalKm.toFixed(2) + ' km', 20, y);
-  doc.text('Total de visitas: ' + visits.length, 20, y + 6);
+  y += 6;
+  doc.text('Total de visitas: ' + visits.length, 20, y);
 
   doc.save(filename);
   showMessage('PDF "' + filename + '" baixado com sucesso!');
