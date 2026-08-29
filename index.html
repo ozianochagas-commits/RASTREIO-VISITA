@@ -80,9 +80,30 @@
   .suggestion-item .sug-main { font-weight: 600; }
   .suggestion-item .sug-sub { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
   .suggestion-loading { padding: 10px 12px; font-size: 12px; color: var(--text-dim); background: var(--card); border: 1px solid var(--border-c); border-radius: 8px; }
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 10000; padding: 16px; align-items: flex-start; justify-content: center; }
+  .modal-overlay.open { display: flex; }
+  .modal-box { background: var(--bg); border: 1px solid var(--border-c); border-radius: 14px; padding: 16px; width: 100%; max-width: 460px; margin-top: 40px; max-height: 85vh; overflow-y: auto; box-shadow: 0 8px 40px rgba(0,0,0,0.6); }
+  .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; font-size: 16px; font-weight: 600; color: var(--orange); }
+  .modal-close { background: transparent; border: none; color: var(--text-dim); font-size: 20px; padding: 4px 8px; min-height: auto; cursor: pointer; }
+  .modal-close:hover { color: var(--text); }
+  .modal-suggestions { margin-top: 12px; }
+  .modal-suggestions .suggestion-item { border-radius: 8px !important; margin-bottom: 6px; border: 1px solid var(--border-c) !important; }
 </style>
 </head>
 <body>
+
+<div id="addressModal" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span>Selecionar endereço</span>
+      <button class="modal-close" onclick="closeAddressSearch()" aria-label="Fechar">✕</button>
+    </div>
+    <input type="text" id="addressSearchInput" placeholder="Digite rua, número, bairro ou cidade" autocomplete="off">
+    <button class="full-w" style="margin-top:8px;" onclick="useCurrentGpsInModal()">📍 Usar minha localização atual (GPS)</button>
+    <div id="modalSuggestions" class="modal-suggestions"></div>
+    <p class="hint" style="margin-top:12px;">Dica: digite pelo menos 3 letras. Toque num resultado para selecionar. Se não achar, digite o endereço completo (rua, número, cidade).</p>
+  </div>
+</div>
 
 <div class="container">
   <div class="header">
@@ -124,9 +145,9 @@
     </div>
     <div class="form-group">
       <label>Nome do local *</label>
-      <input type="text" id="visitLocationName" placeholder="Digite o endereço ou nome do lugar" autocomplete="off">
-      <div id="suggestions" class="suggestions"></div>
-      <p class="hint" style="margin-top:6px; margin-bottom:0;">Digite um endereço e toque numa sugestão para usar a localização exata dele — funciona mesmo sem o GPS do celular.</p>
+      <input type="text" id="visitLocationName" placeholder="Nenhum local selecionado" readonly onclick="openAddressSearch()" style="cursor:pointer;">
+      <button type="button" class="full-w" style="margin-top:8px;" onclick="openAddressSearch()">🔍 Buscar / selecionar endereço</button>
+      <p class="hint" style="margin-top:6px; margin-bottom:0;">Toque para abrir a busca e escolher o endereço exato — funciona mesmo sem o GPS do celular.</p>
     </div>
     <div class="form-group">
       <label>Observações (opcional)</label>
@@ -314,10 +335,21 @@ function reverseGeocode(lat, lon) {
 let searchTimer = null;
 let selectedFromSearch = null;
 
-function onLocationInput() {
-  const q = document.getElementById('visitLocationName').value.trim();
-  selectedFromSearch = null;
-  const box = document.getElementById('suggestions');
+function openAddressSearch() {
+  document.getElementById('addressModal').classList.add('open');
+  const input = document.getElementById('addressSearchInput');
+  input.value = '';
+  document.getElementById('modalSuggestions').innerHTML = '';
+  setTimeout(function() { input.focus(); }, 100);
+}
+
+function closeAddressSearch() {
+  document.getElementById('addressModal').classList.remove('open');
+}
+
+function runAddressSearch() {
+  const q = document.getElementById('addressSearchInput').value.trim();
+  const box = document.getElementById('modalSuggestions');
 
   if (q.length < 3) {
     box.innerHTML = '';
@@ -328,11 +360,11 @@ function onLocationInput() {
   box.innerHTML = '<div class="suggestion-loading">Buscando endereços...</div>';
 
   searchTimer = setTimeout(function() {
-    let url = 'https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=6&countrycodes=br&q=' + encodeURIComponent(q);
+    let url = 'https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=8&countrycodes=br&q=' + encodeURIComponent(q);
     if (lastKnownPosition) {
       const lat = lastKnownPosition.coords.latitude;
       const lng = lastKnownPosition.coords.longitude;
-      const d = 0.15;
+      const d = 0.2;
       url += '&viewbox=' + (lng - d) + ',' + (lat - d) + ',' + (lng + d) + ',' + (lat + d) + '&bounded=0';
     }
 
@@ -340,7 +372,7 @@ function onLocationInput() {
       .then(function(r) { return r.json(); })
       .then(function(results) {
         if (!results || results.length === 0) {
-          box.innerHTML = '<div class="suggestion-loading">Nenhum endereço encontrado. Você pode registrar com o texto digitado mesmo assim.</div>';
+          box.innerHTML = '<div class="suggestion-loading">Nenhum endereço encontrado. Tente adicionar a cidade (ex: "Rua X, 100, Paracuru").</div>';
           return;
         }
         box.innerHTML = results.map(function(item) {
@@ -352,8 +384,9 @@ function onLocationInput() {
           const uf = a.state_code || (a.state ? a.state.substring(0, 2).toUpperCase() : '');
           let main = rua;
           if (numero) main += (main ? ', ' : '') + numero;
-          if (!main) main = item.display_name.split(',')[0];
-          let sub = [bairro, cidade, uf].filter(Boolean).join(' - ');
+          if (bairro) main += (main ? ' - ' : '') + bairro;
+          if (!main) main = item.display_name.split(',').slice(0, 2).join(',');
+          let sub = [cidade, uf].filter(Boolean).join(' - ');
           const dataAttr = encodeURIComponent(JSON.stringify({ lat: parseFloat(item.lat), lng: parseFloat(item.lon), name: main, full: item.display_name }));
           return '<div class="suggestion-item" onclick="pickSuggestion(\'' + dataAttr + '\')">' +
             '<div class="sug-main">' + main + '</div>' +
@@ -367,14 +400,41 @@ function onLocationInput() {
   }, 500);
 }
 
+function useCurrentGpsInModal() {
+  if (!checkGeoSupport()) return;
+  const box = document.getElementById('modalSuggestions');
+  box.innerHTML = '<div class="suggestion-loading">Obtendo sua localização atual...</div>';
+
+  navigator.geolocation.getCurrentPosition(
+    function(pos) {
+      lastKnownPosition = pos;
+      const lat = pos.coords.latitude, lng = pos.coords.longitude;
+      reverseGeocode(lat, lng).then(function(addr) {
+        selectedFromSearch = { lat: lat, lng: lng, name: addr.short, full: addr.full };
+        document.getElementById('visitLocationName').value = addr.short;
+        document.getElementById('addressValue').textContent = addr.full;
+        document.getElementById('status').textContent = 'Local selecionado (GPS)';
+        showMessage('Local definido pela sua localização atual: ' + addr.short);
+        closeAddressSearch();
+      });
+    },
+    function(err) {
+      let msg = 'GPS indisponível. Digite o endereço na busca acima.';
+      if (err.code === 1) msg = 'Permissão de GPS negada. Digite o endereço na busca acima.';
+      box.innerHTML = '<div class="suggestion-loading">' + msg + '</div>';
+    },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+  );
+}
+
 function pickSuggestion(dataAttr) {
   const data = JSON.parse(decodeURIComponent(dataAttr));
   selectedFromSearch = data;
   document.getElementById('visitLocationName').value = data.name;
-  document.getElementById('suggestions').innerHTML = '';
   document.getElementById('addressValue').textContent = data.full;
   document.getElementById('status').textContent = 'Local selecionado';
   showMessage('Local selecionado: ' + data.name);
+  closeAddressSearch();
 }
 
 function checkGeoSupport() {
@@ -412,7 +472,8 @@ function requestLocation() {
       reverseGeocode(lat, lng).then(function(addr) {
         document.getElementById('addressValue').textContent = addr.full;
         const nameField = document.getElementById('visitLocationName');
-        if (!nameField.value.trim()) nameField.value = addr.short;
+        nameField.value = addr.short;
+        selectedFromSearch = { lat: lat, lng: lng, name: addr.short, full: addr.full };
       });
     },
     function(err) {
@@ -477,7 +538,6 @@ function registerVisit() {
 
     document.getElementById('visitLocationName').value = '';
     document.getElementById('visitNotes').value = '';
-    document.getElementById('suggestions').innerHTML = '';
     document.getElementById('status').textContent = '—';
     document.getElementById('addressValue').textContent = 'Toque em "Solicitar localização" para detectar o endereço';
     selectedFromSearch = null;
@@ -879,7 +939,10 @@ function formatLocalDateTimeInput(d) {
     document.getElementById('visitDateTime').value = formatLocalDateTimeInput(new Date());
   }, 1000);
 
-  document.getElementById('visitLocationName').addEventListener('input', onLocationInput);
+  document.getElementById('addressSearchInput').addEventListener('input', runAddressSearch);
+  document.getElementById('addressModal').addEventListener('click', function(e) {
+    if (e.target === this) closeAddressSearch();
+  });
 
   updateLastLocationLabel();
 
