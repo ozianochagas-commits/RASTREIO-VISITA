@@ -231,7 +231,7 @@
   </div>
 
   <div style="text-align:center; color:var(--orange); font-size:12px; margin-top:1.5rem; padding:12px; border:1px dashed var(--orange); border-radius:8px;">
-    ✓ Versão 2.1 — PDF novo (nº, data, local, km)<br>
+    ✓ Versão 2.2 — GPS de alta precisão + PDF novo<br>
     <span id="loadStamp" style="color:var(--text-dim); font-size:10px;"></span>
   </div>
 </div>
@@ -328,7 +328,7 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
 }
 
 function reverseGeocode(lat, lon) {
-  return fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat=' + lat + '&lon=' + lon + '&addressdetails=1')
+  return fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat=' + lat + '&lon=' + lon + '&addressdetails=1&zoom=18')
     .then(function(r) { return r.json(); })
     .then(function(data) {
       const a = data.address || {};
@@ -519,40 +519,77 @@ function requestLocation() {
   if (!checkGeoSupport()) return;
   const btn = document.getElementById('btnRequestLoc');
   btn.disabled = true;
-  btn.textContent = 'Buscando localização...';
+  btn.textContent = 'Buscando GPS preciso...';
   document.getElementById('status').textContent = 'Buscando...';
-  document.getElementById('addressValue').textContent = 'Detectando endereço...';
+  document.getElementById('addressValue').textContent = 'Aguardando sinal preciso do GPS (fique parado alguns segundos)...';
 
-  navigator.geolocation.getCurrentPosition(
+  let bestPos = null;
+  let watchId = null;
+  let done = false;
+
+  function finishWith(pos) {
+    if (done) return;
+    done = true;
+    if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+
+    lastKnownPosition = pos;
+    const lat = pos.coords.latitude, lng = pos.coords.longitude;
+    const acc = Math.round(pos.coords.accuracy || 0);
+    document.getElementById('status').textContent = 'GPS ativo (±' + acc + 'm)';
+    btn.disabled = false;
+    btn.textContent = 'Localização atualizada ✓';
+    if (acc > 40) {
+      showMessage('Localização obtida, mas com precisão de ±' + acc + 'm. Se estiver errada, use "toque para corrigir".', 'error');
+    } else {
+      showMessage('Localização precisa obtida (±' + acc + 'm)!');
+    }
+    setTimeout(function() { btn.textContent = 'Solicitar localização do celular'; }, 2500);
+
+    reverseGeocode(lat, lng).then(function(addr) {
+      document.getElementById('addressValue').textContent = addr.full + ' (±' + acc + 'm)';
+      document.getElementById('visitLocationName').value = addr.short;
+      selectedFromSearch = { lat: lat, lng: lng, name: addr.short, full: addr.full };
+    });
+  }
+
+  function onError(err) {
+    if (done) return;
+    done = true;
+    if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+    document.getElementById('status').textContent = 'Erro';
+    document.getElementById('addressValue').textContent = 'Não foi possível detectar o endereço.';
+    btn.disabled = false;
+    btn.textContent = 'Solicitar localização do celular';
+    let msg = 'Não foi possível obter a localização.';
+    if (err.code === 1) msg = 'Permissão negada. Vá nas configurações do navegador/site e permita o acesso.';
+    if (err.code === 2) msg = 'Localização indisponível. Verifique se o GPS do celular está ligado.';
+    if (err.code === 3) msg = 'Tempo esgotado. Tente ir para perto de uma janela ou área aberta.';
+    showMessage(msg, 'error');
+  }
+
+  // watchPosition coleta várias leituras; ficamos com a mais precisa
+  watchId = navigator.geolocation.watchPosition(
     function(pos) {
-      lastKnownPosition = pos;
-      const lat = pos.coords.latitude, lng = pos.coords.longitude;
-      document.getElementById('status').textContent = 'GPS ativo';
-      btn.disabled = false;
-      btn.textContent = 'Localização atualizada ✓';
-      showMessage('Localização obtida com sucesso!');
-      setTimeout(function() { btn.textContent = 'Solicitar localização do celular'; }, 2500);
-
-      reverseGeocode(lat, lng).then(function(addr) {
-        document.getElementById('addressValue').textContent = addr.full;
-        const nameField = document.getElementById('visitLocationName');
-        nameField.value = addr.short;
-        selectedFromSearch = { lat: lat, lng: lng, name: addr.short, full: addr.full };
-      });
+      if (!bestPos || pos.coords.accuracy < bestPos.coords.accuracy) {
+        bestPos = pos;
+        const acc = Math.round(pos.coords.accuracy || 0);
+        document.getElementById('addressValue').textContent = 'Melhorando precisão... atual: ±' + acc + 'm (fique parado)';
+        // Se já está muito preciso, aceita de imediato
+        if (pos.coords.accuracy <= 15) finishWith(pos);
+      }
     },
-    function(err) {
-      document.getElementById('status').textContent = 'Erro';
-      document.getElementById('addressValue').textContent = 'Não foi possível detectar o endereço.';
-      btn.disabled = false;
-      btn.textContent = 'Solicitar localização do celular';
-      let msg = 'Não foi possível obter a localização.';
-      if (err.code === 1) msg = 'Permissão negada. Vá nas configurações do navegador/site e permita o acesso.';
-      if (err.code === 2) msg = 'Localização indisponível. Verifique se o GPS do celular está ligado.';
-      if (err.code === 3) msg = 'Tempo esgotado ao buscar localização. Tente novamente.';
-      showMessage(msg, 'error');
-    },
-    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    onError,
+    { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
   );
+
+  // Após 8s, aceita a melhor leitura obtida até então
+  setTimeout(function() {
+    if (!done && bestPos) finishWith(bestPos);
+    else if (!done) {
+      // ainda sem leitura: tenta uma vez com getCurrentPosition
+      navigator.geolocation.getCurrentPosition(finishWith, onError, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+    }
+  }, 8000);
 }
 
 function updateLastLocationLabel() {
