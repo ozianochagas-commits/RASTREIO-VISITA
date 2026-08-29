@@ -218,6 +218,10 @@
     <div id="periodSummary"></div>
     <div id="periodList"></div>
   </div>
+
+  <div style="text-align:center; color:var(--text-dim); font-size:11px; margin-top:1.5rem; opacity:0.6;">
+    Rastreador de Visitas · versão 2.0 (PDF com local)
+  </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -815,7 +819,7 @@ function buildPdf(visits, title, filename, periodLine) {
   doc.setFontSize(10);
   if (periodLine) {
     doc.text(periodLine, 20, y);
-    y += 4;
+    y += 5;
   }
   doc.text('Gerado em: ' + new Date().toLocaleString('pt-BR'), 20, y);
   y += 8;
@@ -824,42 +828,48 @@ function buildPdf(visits, title, filename, periodLine) {
   doc.line(20, y, pageWidth - 20, y);
   y += 8;
 
-  const colDate = 20;
-  const colKm = pageWidth - 55;
+  const colNum = 20;
+  const colDate = 28;
+  const colLocal = 72;
+  const colKm = pageWidth - 32;
+  const localMaxWidth = colKm - colLocal - 4;
 
-  doc.setFontSize(10);
-  doc.setFont(undefined, 'bold');
-  doc.text('Data/Hora', colDate, y);
-  doc.text('Distância', colKm, y);
-  y += 5;
-  doc.setDrawColor(220);
-  doc.line(20, y, pageWidth - 20, y);
-  y += 5;
+  function header() {
+    doc.setFontSize(9);
+    doc.setFont(undefined, 'bold');
+    doc.text('#', colNum, y);
+    doc.text('Data/Hora', colDate, y);
+    doc.text('Local', colLocal, y);
+    doc.text('Km', colKm, y, { align: 'right' });
+    y += 4;
+    doc.setDrawColor(220);
+    doc.line(20, y, pageWidth - 20, y);
+    y += 5;
+    doc.setFont(undefined, 'normal');
+  }
+  header();
 
   let totalKm = 0;
-  doc.setFont(undefined, 'normal');
-  visits.forEach(function(visit) {
-    if (y > pageHeight - 30) {
+  visits.forEach(function(visit, idx) {
+    const localLines = doc.splitTextToSize(visit.locationName || 'Local desconhecido', localMaxWidth);
+    const rowHeight = Math.max(6, localLines.length * 4.5);
+
+    if (y + rowHeight > pageHeight - 28) {
       doc.addPage();
       y = 20;
-      doc.setFontSize(10);
-      doc.setFont(undefined, 'bold');
-      doc.text('Data/Hora', colDate, y);
-      doc.text('Distância', colKm, y);
-      y += 5;
-      doc.line(20, y, pageWidth - 20, y);
-      y += 5;
-      doc.setFont(undefined, 'normal');
+      header();
     }
     totalKm += (visit.distance || 0);
 
-    doc.setFontSize(10);
+    doc.setFontSize(9);
+    doc.text(String(idx + 1), colNum, y);
     doc.text(new Date(visit.dateTime).toLocaleString('pt-BR'), colDate, y);
-    doc.text((visit.distance || 0).toFixed(2) + ' km', colKm, y);
-    y += 7;
+    doc.text(localLines, colLocal, y);
+    doc.text((visit.distance || 0).toFixed(2), colKm, y, { align: 'right' });
+    y += rowHeight + 2;
   });
 
-  y += 3;
+  y += 2;
   doc.setDrawColor(200);
   doc.line(20, y, pageWidth - 20, y);
   y += 8;
