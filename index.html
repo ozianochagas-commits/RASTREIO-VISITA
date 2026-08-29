@@ -2,6 +2,9 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Rastreador de Visitas</title>
 <style>
@@ -227,8 +230,9 @@
     <div id="periodList"></div>
   </div>
 
-  <div style="text-align:center; color:var(--text-dim); font-size:11px; margin-top:1.5rem; opacity:0.6;">
-    Rastreador de Visitas · versão 2.0 (PDF com local)
+  <div style="text-align:center; color:var(--orange); font-size:12px; margin-top:1.5rem; padding:12px; border:1px dashed var(--orange); border-radius:8px;">
+    ✓ Versão 2.1 — PDF novo (nº, data, local, km)<br>
+    <span id="loadStamp" style="color:var(--text-dim); font-size:10px;"></span>
   </div>
 </div>
 
@@ -829,6 +833,12 @@ function applyFilter() {
   }).join('');
 }
 
+function timeStamp() {
+  const d = new Date();
+  function p(n) { return (n < 10 ? '0' : '') + n; }
+  return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '_' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+}
+
 function exportPDF() {
   if (state.selectedVisits.size === 0) {
     showMessage('Selecione pelo menos uma visita para exportar.', 'error');
@@ -837,7 +847,7 @@ function exportPDF() {
   const visits = Array.from(state.selectedVisits)
     .map(function(i) { return state.visits[i]; })
     .sort(function(a, b) { return new Date(a.dateTime) - new Date(b.dateTime); });
-  buildPdf(visits, 'Relatório de Visitas', 'Visitas_' + new Date().toISOString().slice(0, 10) + '.pdf');
+  buildPdf(visits, 'Relatório de Visitas', 'Visitas_' + timeStamp() + '.pdf');
 }
 
 function generatePeriodPDF() {
@@ -858,7 +868,7 @@ function generatePeriodPDF() {
   }
   const dataInicio = new Date(from).toLocaleDateString('pt-BR');
   const dataFim = new Date(to).toLocaleDateString('pt-BR');
-  buildPdf(filtered, 'Relatório de Visitas por Período', 'Relatorio_Visitas_' + from + '_ate_' + to + '.pdf', 'Período: ' + dataInicio + ' a ' + dataFim);
+  buildPdf(filtered, 'Relatório de Visitas por Período', 'Relatorio_Visitas_' + from + '_ate_' + to + '_' + timeStamp() + '.pdf', 'Período: ' + dataInicio + ' a ' + dataFim);
 }
 
 function buildPdf(visits, title, filename, periodLine) {
@@ -1011,6 +1021,9 @@ function formatLocalDateTimeInput(d) {
   });
 
   updateLastLocationLabel();
+
+  const ls = document.getElementById('loadStamp');
+  if (ls) ls.textContent = 'Carregado em ' + new Date().toLocaleString('pt-BR');
 
   try {
     localStorage.setItem('__test__', '1');
