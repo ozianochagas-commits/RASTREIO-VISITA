@@ -171,13 +171,14 @@
       <div class="grid2">
         <div class="form-group" style="margin-bottom: 0;">
           <label>Data inicial</label>
-          <input type="date" id="periodFrom">
+          <input type="date" id="periodFrom" onchange="showPeriodVisits()">
         </div>
         <div class="form-group" style="margin-bottom: 0;">
           <label>Data final</label>
-          <input type="date" id="periodTo">
+          <input type="date" id="periodTo" onchange="showPeriodVisits()">
         </div>
       </div>
+      <button class="full-w" onclick="showPeriodVisits()">Ver visitas do período</button>
       <button class="btn-export full-w" onclick="generatePeriodPDF()">Exportar período em PDF</button>
     </div>
     <div id="periodSummary"></div>
@@ -520,8 +521,66 @@ function renderReportList() {
 
 function renderPeriodView() {
   const today = new Date().toISOString().slice(0, 10);
-  if (!document.getElementById('periodFrom').value) document.getElementById('periodFrom').value = today;
+  if (!document.getElementById('periodFrom').value) {
+    let earliest = today;
+    if (state.visits.length > 0) {
+      const dates = state.visits.map(function(v) { return v.startDateTime.slice(0, 10); });
+      earliest = dates.reduce(function(a, b) { return a < b ? a : b; });
+    }
+    document.getElementById('periodFrom').value = earliest;
+  }
   if (!document.getElementById('periodTo').value) document.getElementById('periodTo').value = today;
+  showPeriodVisits();
+}
+
+function showPeriodVisits() {
+  const from = document.getElementById('periodFrom').value;
+  const to = document.getElementById('periodTo').value;
+  const summaryEl = document.getElementById('periodSummary');
+  const listEl = document.getElementById('periodList');
+
+  if (!from || !to) {
+    summaryEl.innerHTML = '';
+    listEl.innerHTML = '<div class="empty-state">Selecione a data inicial e final.</div>';
+    return;
+  }
+
+  if (state.visits.length === 0) {
+    summaryEl.innerHTML = '';
+    listEl.innerHTML = '<div class="empty-state">Nenhuma visita registrada ainda. Vá em "Registrar" para começar.</div>';
+    return;
+  }
+
+  const fromDate = new Date(from);
+  const toDate = new Date(to);
+  toDate.setHours(23, 59, 59);
+
+  const filtered = state.visits.filter(function(v) {
+    const d = new Date(v.startDateTime);
+    return d >= fromDate && d <= toDate;
+  });
+
+  if (filtered.length === 0) {
+    summaryEl.innerHTML = '';
+    listEl.innerHTML = '<div class="empty-state">Nenhuma visita neste período. Você tem ' + state.visits.length + ' visita(s) no total — ajuste as datas acima.</div>';
+    return;
+  }
+
+  const totalKm = filtered.reduce(function(sum, v) { return sum + (v.distance || 0); }, 0);
+  summaryEl.innerHTML = '<div class="summary">' +
+    '<div style="font-size:13px;">Total do período</div>' +
+    '<div class="summary-value">' + totalKm.toFixed(2) + ' km</div>' +
+    '<div style="font-size:12px;">' + filtered.length + ' visita(s)</div>' +
+    '</div>';
+
+  listEl.innerHTML = filtered.map(function(visit) {
+    const start = new Date(visit.startDateTime);
+    return '<div class="visit-card">' +
+      '<div class="visit-date">' + start.toLocaleString('pt-BR') + '</div>' +
+      '<div class="visit-location"><strong>' + visit.startLocationName + '</strong> \u2192 <strong>' + visit.endLocationName + '</strong></div>' +
+      '<div class="visit-km">' + (visit.distance || 0).toFixed(2) + ' km</div>' +
+      '</div>';
+  }).join('');
 }
 
 function toggleSelect(idx) {
