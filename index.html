@@ -551,13 +551,9 @@ function showPeriodVisits() {
     return;
   }
 
-  const fromDate = new Date(from);
-  const toDate = new Date(to);
-  toDate.setHours(23, 59, 59);
-
   const filtered = state.visits.filter(function(v) {
-    const d = new Date(v.startDateTime);
-    return d >= fromDate && d <= toDate;
+    const d = v.startDateTime.slice(0, 10);
+    return d >= from && d <= to;
   });
 
   if (filtered.length === 0) {
@@ -624,13 +620,10 @@ function applyFilter() {
     showMessage('Preencha as datas inicial e final.', 'error');
     return;
   }
-  const fromDate = new Date(from);
-  const toDate = new Date(to);
-  toDate.setHours(23, 59, 59);
   const visitsList = document.getElementById('visitsList');
   const filtered = state.visits.filter(function(v) {
-    const d = new Date(v.startDateTime);
-    return d >= fromDate && d <= toDate;
+    const d = v.startDateTime.slice(0, 10);
+    return d >= from && d <= to;
   });
   if (filtered.length === 0) {
     visitsList.innerHTML = '<div class="empty-state">Nenhuma visita neste período.</div>';
@@ -662,12 +655,9 @@ function generatePeriodPDF() {
     showMessage('Preencha as datas inicial e final.', 'error');
     return;
   }
-  const fromDate = new Date(from);
-  const toDate = new Date(to);
-  toDate.setHours(23, 59, 59);
   const filtered = state.visits.filter(function(v) {
-    const d = new Date(v.startDateTime);
-    return d >= fromDate && d <= toDate;
+    const d = v.startDateTime.slice(0, 10);
+    return d >= from && d <= to;
   });
   if (filtered.length === 0) {
     showMessage('Nenhuma visita neste período.', 'error');
