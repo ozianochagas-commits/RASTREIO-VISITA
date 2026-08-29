@@ -110,8 +110,8 @@
     <button class="btn-primary full-w" id="btnRequestLoc" onclick="requestLocation()" style="margin-bottom: 1rem;">Solicitar localização do celular</button>
 
     <div class="form-group">
-      <label>Data e hora da visita</label>
-      <input type="datetime-local" id="visitDateTime">
+      <label>Data e hora da visita (automática, igual à do celular)</label>
+      <input type="datetime-local" id="visitDateTime" readonly style="opacity: 0.7;">
     </div>
     <div class="form-group">
       <label>Nome do local *</label>
@@ -342,23 +342,21 @@ function updateLastLocationLabel() {
 }
 
 function registerVisit() {
-  const dateTime = document.getElementById('visitDateTime').value;
   const locationName = document.getElementById('visitLocationName').value.trim();
   const notes = document.getElementById('visitNotes').value;
 
-  if (!dateTime) {
-    showMessage('Preencha a data e hora da visita.', 'error');
-    return;
-  }
   if (!locationName) {
     showMessage('Digite o nome do local antes de registrar.', 'error');
     return;
   }
   if (!checkGeoSupport()) return;
 
-  document.getElementById('btnRegister').disabled = true;
+  const btn = document.getElementById('btnRegister');
+  btn.disabled = true;
+  btn.textContent = 'Registrando...';
 
   function finish(lat, lng) {
+    const submitTime = new Date();
     let distance = 0;
     let fromLocationName = 'Ponto de partida';
     if (state.lastLocation) {
@@ -367,7 +365,7 @@ function registerVisit() {
     }
 
     state.visits.push({
-      dateTime: new Date(dateTime).toISOString(),
+      dateTime: submitTime.toISOString(),
       locationName: locationName,
       fromLocationName: fromLocationName,
       lat: lat,
@@ -380,17 +378,22 @@ function registerVisit() {
     saveState();
     updateLastLocationLabel();
 
-    document.getElementById('visitDateTime').value = '';
     document.getElementById('visitLocationName').value = '';
     document.getElementById('visitNotes').value = '';
     document.getElementById('status').textContent = '—';
     document.getElementById('addressValue').textContent = 'Toque em "Solicitar localização" para detectar o endereço';
 
-    showMessage('Visita registrada em ' + locationName + '! Distância desde o último local: ' + distance.toFixed(2) + ' km');
-    document.getElementById('btnRegister').disabled = false;
+    showMessage('✓ Visita registrada em ' + locationName + ' às ' + submitTime.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'}) + '! Distância desde o último local: ' + distance.toFixed(2) + ' km');
 
-    const now = new Date();
-    document.getElementById('visitDateTime').value = now.toISOString().slice(0, 16);
+    btn.disabled = false;
+    btn.textContent = '✓ Registrado com sucesso!';
+    btn.style.background = '#27500A';
+    setTimeout(function() {
+      btn.textContent = 'Registrar visita';
+      btn.style.background = '';
+    }, 2200);
+
+    document.getElementById('visitDateTime').value = formatLocalDateTimeInput(new Date());
   }
 
   if (lastKnownPosition) {
@@ -731,9 +734,17 @@ function importBackup(event) {
   reader.readAsText(file);
 }
 
+function formatLocalDateTimeInput(d) {
+  const pad = function(n) { return String(n).padStart(2, '0'); };
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+}
+
 (function() {
-  const now = new Date();
-  document.getElementById('visitDateTime').value = now.toISOString().slice(0, 16);
+  document.getElementById('visitDateTime').value = formatLocalDateTimeInput(new Date());
+  setInterval(function() {
+    document.getElementById('visitDateTime').value = formatLocalDateTimeInput(new Date());
+  }, 1000);
+
   updateLastLocationLabel();
 
   try {
