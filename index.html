@@ -101,7 +101,14 @@
     <input type="text" id="addressSearchInput" placeholder="Digite rua, número, bairro ou cidade" autocomplete="off">
     <button class="full-w" style="margin-top:8px;" onclick="useCurrentGpsInModal()">📍 Usar minha localização atual (GPS)</button>
     <div id="modalSuggestions" class="modal-suggestions"></div>
-    <p class="hint" style="margin-top:12px;">Dica: digite pelo menos 3 letras. Toque num resultado para selecionar. Se não achar, digite o endereço completo (rua, número, cidade).</p>
+
+    <div style="border-top:1px solid var(--border-c); margin-top:16px; padding-top:16px;">
+      <p class="hint" style="margin-top:0;">Não achou na busca? Confira o endereço no Google Maps e depois digite o nome abaixo para salvar:</p>
+      <button class="full-w" style="margin-bottom:10px;" onclick="openInGoogleMaps()">🗺️ Abrir no Google Maps</button>
+      <label style="display:block; font-size:13px; margin-bottom:6px;">Ou digite o nome do local manualmente</label>
+      <input type="text" id="manualLocationInput" placeholder="Ex: Cliente João - Rua X, 100" autocomplete="off">
+      <button class="btn-primary full-w" style="margin-top:8px;" onclick="useManualLocation()">Usar este nome (com meu GPS atual)</button>
+    </div>
   </div>
 </div>
 
@@ -131,10 +138,11 @@
       <div class="status-value" id="lastLocationLabel" style="font-size: 14px;">Nenhum ainda — a próxima visita começa do zero</div>
     </div>
 
-    <div class="status-card">
-      <div class="status-label">Localização atual</div>
+    <div class="status-card" onclick="openAddressSearch()" style="cursor:pointer;">
+      <div class="status-label">Localização atual <span style="color:var(--orange);">(toque para corrigir)</span></div>
       <div class="status-value" id="status" style="margin-bottom: 8px;">—</div>
       <div id="addressValue" style="font-size: 13px; color: var(--text-dim); line-height: 1.4;">Toque em "Solicitar localização" para detectar o endereço</div>
+      <div style="font-size: 11px; color: var(--orange); margin-top: 8px;">✎ Endereço errado? Toque aqui para buscar/digitar o local certo</div>
     </div>
 
     <button class="btn-primary full-w" id="btnRequestLoc" onclick="requestLocation()" style="margin-bottom: 1rem;">Solicitar localização do celular</button>
@@ -439,6 +447,54 @@ function pickSuggestion(dataAttr) {
   document.getElementById('status').textContent = 'Local selecionado';
   showMessage('Local selecionado: ' + data.name);
   closeAddressSearch();
+}
+
+function openInGoogleMaps() {
+  const q = document.getElementById('addressSearchInput').value.trim()
+    || document.getElementById('manualLocationInput').value.trim();
+  let url;
+  if (q) {
+    url = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(q);
+  } else if (lastKnownPosition) {
+    url = 'https://www.google.com/maps/search/?api=1&query=' + lastKnownPosition.coords.latitude + ',' + lastKnownPosition.coords.longitude;
+  } else {
+    url = 'https://www.google.com/maps';
+  }
+  window.open(url, '_blank');
+}
+
+function useManualLocation() {
+  const name = document.getElementById('manualLocationInput').value.trim();
+  if (!name) {
+    showMessage('Digite um nome para o local.', 'error');
+    return;
+  }
+
+  function apply(lat, lng, full) {
+    selectedFromSearch = { lat: lat, lng: lng, name: name, full: full || name };
+    document.getElementById('visitLocationName').value = name;
+    document.getElementById('addressValue').textContent = full || name;
+    document.getElementById('status').textContent = 'Local definido manualmente';
+    showMessage('Local definido: ' + name);
+    document.getElementById('manualLocationInput').value = '';
+    closeAddressSearch();
+  }
+
+  // Usa o GPS atual como coordenada (para calcular a km), com o nome digitado
+  if (lastKnownPosition) {
+    apply(lastKnownPosition.coords.latitude, lastKnownPosition.coords.longitude, name);
+    return;
+  }
+  if (!checkGeoSupport()) {
+    // Sem GPS: registra só com o nome; distância será 0 se não houver coordenada anterior
+    apply(state.lastLocation ? state.lastLocation.lat : 0, state.lastLocation ? state.lastLocation.lng : 0, name);
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    function(pos) { lastKnownPosition = pos; apply(pos.coords.latitude, pos.coords.longitude, name); },
+    function() { apply(state.lastLocation ? state.lastLocation.lat : 0, state.lastLocation ? state.lastLocation.lng : 0, name); },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
 }
 
 function checkGeoSupport() {
