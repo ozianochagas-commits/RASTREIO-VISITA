@@ -184,6 +184,7 @@
         </div>
       </div>
       <button class="full-w" onclick="showPeriodVisits()">Ver visitas do período</button>
+      <button class="full-w" onclick="renderPeriodView()">Atualizar (incluir visitas novas)</button>
       <button class="btn-export full-w" onclick="generatePeriodPDF()">Exportar período em PDF</button>
     </div>
     <div id="periodSummary"></div>
@@ -526,15 +527,13 @@ function renderReportList() {
 
 function renderPeriodView() {
   const today = new Date().toISOString().slice(0, 10);
-  if (!document.getElementById('periodFrom').value) {
-    let earliest = today;
-    if (state.visits.length > 0) {
-      const dates = state.visits.map(function(v) { return v.startDateTime.slice(0, 10); });
-      earliest = dates.reduce(function(a, b) { return a < b ? a : b; });
-    }
-    document.getElementById('periodFrom').value = earliest;
+  let earliest = today;
+  if (state.visits.length > 0) {
+    const dates = state.visits.map(function(v) { return v.startDateTime.slice(0, 10); });
+    earliest = dates.reduce(function(a, b) { return a < b ? a : b; });
   }
-  if (!document.getElementById('periodTo').value) document.getElementById('periodTo').value = today;
+  document.getElementById('periodFrom').value = earliest;
+  document.getElementById('periodTo').value = today;
   showPeriodVisits();
 }
 
