@@ -92,10 +92,12 @@
         <div class="status-value" id="status">—</div>
       </div>
       <div class="status-card">
-        <div class="status-label">Local</div>
-        <div class="status-value" id="locationName" style="font-size: 14px;">—</div>
+        <div class="status-label">Coordenadas</div>
+        <div class="status-value" id="coordsValue" style="font-size: 12px;">—</div>
       </div>
     </div>
+
+    <button class="btn-primary full-w" id="btnRequestLoc" onclick="requestLocation()" style="margin-bottom: 1rem;">Solicitar localização do celular</button>
 
     <div id="registroView">
       <div class="form-group">
@@ -103,8 +105,8 @@
         <input type="datetime-local" id="startDateTime">
       </div>
       <div class="form-group">
-        <label>Local de saída</label>
-        <input type="text" id="startLocationName" placeholder="Ex: Escritório, Casa, Loja">
+        <label>Nome do local *</label>
+        <input type="text" id="startLocationName" placeholder="Ex: Escritório, Casa, Loja do cliente">
       </div>
       <button class="btn-primary full-w" id="btnStart" onclick="startVisit()">Iniciar visita</button>
     </div>
@@ -233,16 +235,57 @@ function checkGeoSupport() {
   }
   if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
     showMessage('Atenção: GPS só funciona em HTTPS ou localhost. Hospede em Netlify, GitHub Pages, etc.', 'error');
+    return false;
   }
   return true;
 }
 
+let lastKnownPosition = null;
+
+function requestLocation() {
+  if (!checkGeoSupport()) return;
+
+  const btn = document.getElementById('btnRequestLoc');
+  btn.disabled = true;
+  btn.textContent = 'Buscando localização...';
+  document.getElementById('status').textContent = 'Buscando...';
+
+  navigator.geolocation.getCurrentPosition(
+    function(pos) {
+      lastKnownPosition = pos;
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      document.getElementById('status').textContent = 'GPS ativo';
+      document.getElementById('coordsValue').textContent = lat.toFixed(5) + ', ' + lng.toFixed(5);
+      btn.disabled = false;
+      btn.textContent = 'Localização atualizada ✓';
+      showMessage('Localização obtida com sucesso!');
+      setTimeout(function() { btn.textContent = 'Solicitar localização do celular'; }, 2500);
+    },
+    function(err) {
+      document.getElementById('status').textContent = 'Erro';
+      btn.disabled = false;
+      btn.textContent = 'Solicitar localização do celular';
+      let msg = 'Não foi possível obter a localização.';
+      if (err.code === 1) msg = 'Permissão negada. Vá nas configurações do navegador/site e permita o acesso à localização.';
+      if (err.code === 2) msg = 'Localização indisponível. Verifique se o GPS do celular está ligado.';
+      if (err.code === 3) msg = 'Tempo esgotado ao buscar localização. Tente novamente em um local com melhor sinal.';
+      showMessage(msg, 'error');
+    },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+  );
+}
+
 function startVisit() {
   const startDateTime = document.getElementById('startDateTime').value;
-  const startLocationName = document.getElementById('startLocationName').value;
+  const startLocationName = document.getElementById('startLocationName').value.trim();
 
   if (!startDateTime) {
     showMessage('Preencha a data e hora de saída.', 'error');
+    return;
+  }
+  if (!startLocationName) {
+    showMessage('Digite o nome do local antes de iniciar.', 'error');
     return;
   }
   if (!checkGeoSupport()) return;
@@ -250,30 +293,36 @@ function startVisit() {
   document.getElementById('btnStart').disabled = true;
   document.getElementById('status').textContent = 'Buscando...';
 
+  function begin(lat, lng) {
+    state.currentVisit = {
+      startLat: lat, startLng: lng,
+      startDateTime: new Date(startDateTime).toISOString(),
+      startLocationName: startLocationName
+    };
+    saveState();
+    document.getElementById('status').textContent = 'Ativa';
+    document.getElementById('coordsValue').textContent = lat.toFixed(5) + ', ' + lng.toFixed(5);
+    document.getElementById('registroView').style.display = 'none';
+    document.getElementById('finalizarView').style.display = 'block';
+    document.getElementById('endDateTime').value = new Date().toISOString().slice(0, 16);
+    showMessage('Visita iniciada em ' + startLocationName + '!');
+    document.getElementById('btnStart').disabled = false;
+  }
+
+  if (lastKnownPosition) {
+    begin(lastKnownPosition.coords.latitude, lastKnownPosition.coords.longitude);
+    return;
+  }
+
   navigator.geolocation.getCurrentPosition(
-    function(pos) {
-      const lat = pos.coords.latitude, lng = pos.coords.longitude;
-      const finish = function(locName) {
-        state.currentVisit = {
-          startLat: lat, startLng: lng,
-          startDateTime: new Date(startDateTime).toISOString(),
-          startLocationName: locName
-        };
-        saveState();
-        document.getElementById('status').textContent = 'Ativa';
-        document.getElementById('locationName').textContent = locName;
-        document.getElementById('registroView').style.display = 'none';
-        document.getElementById('finalizarView').style.display = 'block';
-        document.getElementById('endDateTime').value = new Date().toISOString().slice(0, 16);
-        showMessage('Visita iniciada!');
-        document.getElementById('btnStart').disabled = false;
-      };
-      if (startLocationName) finish(startLocationName);
-      else reverseGeocode(lat, lng).then(finish);
-    },
+    function(pos) { begin(pos.coords.latitude, pos.coords.longitude); },
     function(err) {
-      showMessage('Erro ao obter localização: ' + err.message + '. Verifique se deu permissão de GPS ao navegador.', 'error');
-      document.getElementById('status').textContent = '—';
+      let msg = 'Não foi possível obter a localização.';
+      if (err.code === 1) msg = 'Permissão de GPS negada. Toque em "Solicitar localização" e permita o acesso.';
+      if (err.code === 2) msg = 'Localização indisponível. Verifique se o GPS do celular está ligado.';
+      if (err.code === 3) msg = 'Tempo esgotado ao buscar localização. Tente novamente.';
+      showMessage(msg, 'error');
+      document.getElementById('status').textContent = 'Erro';
       document.getElementById('btnStart').disabled = false;
     },
     { enableHighAccuracy: true, timeout: 15000 }
@@ -315,7 +364,7 @@ function saveVisit() {
         document.getElementById('registroView').style.display = 'block';
         document.getElementById('finalizarView').style.display = 'none';
         document.getElementById('status').textContent = '—';
-        document.getElementById('locationName').textContent = '—';
+        document.getElementById('coordsValue').textContent = '—';
         document.getElementById('startDateTime').value = '';
         document.getElementById('startLocationName').value = '';
         document.getElementById('endDateTime').value = '';
@@ -339,7 +388,7 @@ function cancelVisit() {
   document.getElementById('registroView').style.display = 'block';
   document.getElementById('finalizarView').style.display = 'none';
   document.getElementById('status').textContent = '—';
-  document.getElementById('locationName').textContent = '—';
+  document.getElementById('coordsValue').textContent = '—';
   document.getElementById('startDateTime').value = '';
   document.getElementById('startLocationName').value = '';
   showMessage('Visita cancelada.');
