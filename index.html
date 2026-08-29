@@ -196,6 +196,30 @@ const state = {
   selectedVisits: new Set()
 };
 
+function migrateOldVisits() {
+  let migrated = 0;
+  state.visits = state.visits.map(function(v) {
+    if (v.dateTime) return v;
+    migrated++;
+    const dateTime = v.endDateTime || v.startDateTime || new Date().toISOString();
+    return {
+      dateTime: dateTime,
+      locationName: v.endLocationName || v.startLocationName || 'Local desconhecido',
+      fromLocationName: v.startLocationName || 'Ponto de partida',
+      lat: v.endLat != null ? v.endLat : v.startLat,
+      lng: v.endLng != null ? v.endLng : v.startLng,
+      distance: v.distance || 0,
+      notes: v.notes || ''
+    };
+  }).filter(function(v) { return v.dateTime; });
+
+  if (migrated > 0) {
+    saveState();
+    showMessage(migrated + ' visita(s) antiga(s) atualizada(s) para o novo formato.');
+  }
+}
+migrateOldVisits();
+
 function saveState() {
   try {
     localStorage.setItem('visits', JSON.stringify(state.visits));
