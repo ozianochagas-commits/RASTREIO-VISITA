@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Rastreador de Visitas</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --orange: #FE5000;
+    --orange-dark: #CC4000;
+    --bg: #0a0a0a;
+    --card: #171717;
+    --border-c: #2e2e2e;
+    --text: #f2f2f2;
+    --text-dim: #999;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding-bottom: 2rem;
+  }
+  .container { padding: 1rem; max-width: 480px; margin: 0 auto; }
+  .header { margin-bottom: 1.5rem; padding-top: 1rem; }
+  .header h1 { font-size: 22px; font-weight: 600; margin-bottom: 0.25rem; color: var(--orange); }
+  .header p { font-size: 13px; color: var(--text-dim); }
+  .tabs { display: flex; gap: 4px; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border-c); overflow-x: auto; }
+  .tab-btn { background: transparent; border: none; padding: 12px 14px; font-size: 13px; font-weight: 500; cursor: pointer; color: var(--text-dim); border-bottom: 2px solid transparent; white-space: nowrap; }
+  .tab-btn.active { color: var(--orange); border-bottom-color: var(--orange); }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+  .form-group { margin-bottom: 1rem; }
+  label { display: block; font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 6px; }
+  input, select, textarea {
+    width: 100%; padding: 12px; font-size: 15px; border: 1px solid var(--border-c);
+    border-radius: 8px; font-family: inherit; background: var(--card); color: var(--text);
+  }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--orange); }
+  textarea { min-height: 60px; resize: vertical; }
+  button {
+    background: var(--card); border: 1px solid var(--border-c); border-radius: 8px; padding: 12px 16px;
+    font-size: 15px; font-weight: 500; cursor: pointer; color: var(--text); min-height: 46px;
+  }
+  button:active { transform: scale(0.98); }
+  .btn-primary { background: var(--orange); color: #fff; border: none; }
+  .btn-danger { color: #ff6b6b; border-color: #ff6b6b; }
+  .btn-export { background: var(--orange); color: #fff; border: none; }
+  .status-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 1.5rem; }
+  .status-card { background: var(--card); border: 1px solid var(--border-c); border-radius: 8px; padding: 1rem; }
+  .status-label { font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
+  .status-value { font-size: 18px; font-weight: 600; color: var(--text); }
+  .visit-card { background: var(--card); border: 1px solid var(--border-c); border-radius: 8px; padding: 1rem; margin-bottom: 12px; }
+  .visit-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .checkbox { width: 20px; height: 20px; cursor: pointer; flex-shrink: 0; accent-color: var(--orange); }
+  .visit-date { font-weight: 600; font-size: 14px; margin-bottom: 4px; color: var(--text); }
+  .visit-location { font-size: 13px; color: var(--text-dim); margin-bottom: 4px; }
+  .visit-km { font-size: 16px; font-weight: 600; color: var(--orange); margin-bottom: 4px; }
+  .filter-group { background: var(--card); border: 1px solid var(--border-c); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+  .message { border-radius: 8px; padding: 12px; margin-bottom: 1rem; font-size: 13px; }
+  .success { background: #1a2e1a; color: #7fd97f; border: 1px solid #3d6b3d; }
+  .error { background: #2e1a1a; color: #ff8080; border: 1px solid #6b3d3d; }
+  .summary { background: #2a1608; color: var(--orange); border: 1px solid var(--orange); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; text-align: center; }
+  .summary-value { font-size: 26px; font-weight: 700; margin: 8px 0; color: var(--orange); }
+  .empty-state { text-align: center; color: var(--text-dim); padding: 2rem 1rem; font-size: 14px; }
+  h3 { font-size: 15px; margin-bottom: 1rem; color: var(--orange); }
+  .full-w { width: 100%; margin-bottom: 8px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header">
+    <h1>Rastreador de Visitas</h1>
+    <p>Registre quilometragem, datas e locais usando o GPS do celular</p>
+  </div>
+
+  <div id="message"></div>
+
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('registro')">Registrar</button>
+    <button class="tab-btn" onclick="switchTab('historico')">Histórico</button>
+    <button class="tab-btn" onclick="switchTab('relatorio')">Relatório</button>
+    <button class="tab-btn" onclick="switchTab('periodo')">Período</button>
+  </div>
+
+  <div id="registro" class="tab-content active">
+    <div class="status-grid">
+      <div class="status-card">
+        <div class="status-label">Localização</div>
+        <div class="status-value" id="status">—</div>
+      </div>
+      <div class="status-card">
+        <div class="status-label">Local</div>
+        <div class="status-value" id="locationName" style="font-size: 14px;">—</div>
+      </div>
+    </div>
+
+    <div id="registroView">
+      <div class="form-group">
+        <label>Data e hora de saída</label>
+        <input type="datetime-local" id="startDateTime">
+      </div>
+      <div class="form-group">
+        <label>Local de saída</label>
+        <input type="text" id="startLocationName" placeholder="Ex: Escritório, Casa, Loja">
+      </div>
+      <button class="btn-primary full-w" id="btnStart" onclick="startVisit()">Iniciar visita</button>
+    </div>
+
+    <div id="finalizarView" style="display: none;">
+      <div class="form-group">
+        <label>Data e hora de chegada</label>
+        <input type="datetime-local" id="endDateTime">
+      </div>
+      <div class="form-group">
+        <label>Local de chegada</label>
+        <input type="text" id="endLocationName" placeholder="Ex: Escritório, Casa, Loja">
+      </div>
+      <div class="form-group">
+        <label>Observações (opcional)</label>
+        <textarea id="notes" placeholder="Qualquer detalhe adicional sobre a visita"></textarea>
+      </div>
+      <button class="btn-primary full-w" onclick="saveVisit()">Salvar visita</button>
+      <button class="btn-danger full-w" onclick="cancelVisit()">Cancelar</button>
+    </div>
+  </div>
+
+  <div id="historico" class="tab-content">
+    <div class="filter-group">
+      <div class="grid2">
+        <div class="form-group" style="margin-bottom: 0;">
+          <label>De:</label>
+          <input type="date" id="filterFrom">
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
+          <label>Até:</label>
+          <input type="date" id="filterTo">
+        </div>
+      </div>
+      <button class="full-w" onclick="applyFilter()">Filtrar</button>
+    </div>
+    <div id="visitsList"></div>
+  </div>
+
+  <div id="relatorio" class="tab-content">
+    <div class="summary">
+      <div style="font-size: 13px;">Quilometragem selecionada</div>
+      <div class="summary-value" id="totalKm">0 km</div>
+      <div style="font-size: 12px;"><span id="selectedCount">0</span> visitas selecionadas</div>
+    </div>
+    <button class="btn-export full-w" onclick="exportPDF()">Exportar selecionadas em PDF</button>
+    <button class="full-w" onclick="selectAllForReport()">Selecionar tudo</button>
+    <button class="btn-danger full-w" onclick="deselectAllForReport()">Desselecionar tudo</button>
+    <div id="reportList"></div>
+  </div>
+
+  <div id="periodo" class="tab-content">
+    <div class="filter-group">
+      <h3>Gerar relatório por período</h3>
+      <div class="grid2">
+        <div class="form-group" style="margin-bottom: 0;">
+          <label>Data inicial</label>
+          <input type="date" id="periodFrom">
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
+          <label>Data final</label>
+          <input type="date" id="periodTo">
+        </div>
+      </div>
+      <button class="btn-export full-w" onclick="generatePeriodPDF()">Exportar período em PDF</button>
+    </div>
+    <div id="periodSummary"></div>
+    <div id="periodList"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+const state = {
+  visits: JSON.parse(localStorage.getItem('visits') || '[]'),
+  currentVisit: JSON.parse(localStorage.getItem('currentVisit') || 'null'),
+  selectedVisits: new Set()
+};
+
+function saveState() {
+  localStorage.setItem('visits', JSON.stringify(state.visits));
+  localStorage.setItem('currentVisit', JSON.stringify(state.currentVisit));
+}
+
+function showMessage(text, type) {
+  type = type || 'success';
+  const msg = document.getElementById('message');
+  msg.innerHTML = '<div class="' + type + '">' + text + '</div>';
+  setTimeout(function() { msg.innerHTML = ''; }, 4000);
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.remove('active'); });
+  document.querySelectorAll('.tab-btn').forEach(function(el) { el.classList.remove('active'); });
+  document.getElementById(tab).classList.add('active');
+  document.querySelector('[onclick="switchTab(\'' + tab + '\')"]').classList.add('active');
+  if (tab === 'historico') renderVisitsList();
+  if (tab === 'relatorio') renderReportList();
+  if (tab === 'periodo') renderPeriodView();
+}
+
+function haversineDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function reverseGeocode(lat, lon) {
+  return fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat=' + lat + '&lon=' + lon)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      return (data.address && (data.address.city || data.address.town || data.address.village)) || 'Local desconhecido';
+    })
+    .catch(function() { return 'Local (sem GPS)'; });
+}
+
+function checkGeoSupport() {
+  if (!('geolocation' in navigator)) {
+    showMessage('Este navegador não suporta geolocalização.', 'error');
+    return false;
+  }
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+    showMessage('Atenção: GPS só funciona em HTTPS ou localhost. Hospede em Netlify, GitHub Pages, etc.', 'error');
+  }
+  return true;
+}
+
+function startVisit() {
+  const startDateTime = document.getElementById('startDateTime').value;
+  const startLocationName = document.getElementById('startLocationName').value;
+
+  if (!startDateTime) {
+    showMessage('Preencha a data e hora de saída.', 'error');
+    return;
+  }
+  if (!checkGeoSupport()) return;
+
+  document.getElementById('btnStart').disabled = true;
+  document.getElementById('status').textContent = 'Buscando...';
+
+  navigator.geolocation.getCurrentPosition(
+    function(pos) {
+      const lat = pos.coords.latitude, lng = pos.coords.longitude;
+      const finish = function(locName) {
+        state.currentVisit = {
+          startLat: lat, startLng: lng,
+          startDateTime: new Date(startDateTime).toISOString(),
+          startLocationName: locName
+        };
+        saveState();
+        document.getElementById('status').textContent = 'Ativa';
+        document.getElementById('locationName').textContent = locName;
+        document.getElementById('registroView').style.display = 'none';
+        document.getElementById('finalizarView').style.display = 'block';
+        document.getElementById('endDateTime').value = new Date().toISOString().slice(0, 16);
+        showMessage('Visita iniciada!');
+        document.getElementById('btnStart').disabled = false;
+      };
+      if (startLocationName) finish(startLocationName);
+      else reverseGeocode(lat, lng).then(finish);
+    },
+    function(err) {
+      showMessage('Erro ao obter localização: ' + err.message + '. Verifique se deu permissão de GPS ao navegador.', 'error');
+      document.getElementById('status').textContent = '—';
+      document.getElementById('btnStart').disabled = false;
+    },
+    { enableHighAccuracy: true, timeout: 15000 }
+  );
+}
+
+function saveVisit() {
+  if (!state.currentVisit) return;
+  const endDateTime = document.getElementById('endDateTime').value;
+  const endLocationName = document.getElementById('endLocationName').value;
+  const notes = document.getElementById('notes').value;
+
+  if (!endDateTime) {
+    showMessage('Preencha a data e hora de chegada.', 'error');
+    return;
+  }
+  if (!checkGeoSupport()) return;
+
+  navigator.geolocation.getCurrentPosition(
+    function(pos) {
+      const lat = pos.coords.latitude, lng = pos.coords.longitude;
+      const distance = haversineDistance(state.currentVisit.startLat, state.currentVisit.startLng, lat, lng);
+
+      const finish = function(locName) {
+        state.visits.push({
+          startLat: state.currentVisit.startLat,
+          startLng: state.currentVisit.startLng,
+          endLat: lat, endLng: lng,
+          startDateTime: state.currentVisit.startDateTime,
+          startLocationName: state.currentVisit.startLocationName,
+          endDateTime: new Date(endDateTime).toISOString(),
+          endLocationName: locName,
+          notes: notes,
+          distance: distance
+        });
+        state.currentVisit = null;
+        saveState();
+
+        document.getElementById('registroView').style.display = 'block';
+        document.getElementById('finalizarView').style.display = 'none';
+        document.getElementById('status').textContent = '—';
+        document.getElementById('locationName').textContent = '—';
+        document.getElementById('startDateTime').value = '';
+        document.getElementById('startLocationName').value = '';
+        document.getElementById('endDateTime').value = '';
+        document.getElementById('endLocationName').value = '';
+        document.getElementById('notes').value = '';
+        showMessage('Visita salva! Distância: ' + distance.toFixed(2) + ' km');
+      };
+      if (endLocationName) finish(endLocationName);
+      else reverseGeocode(lat, lng).then(finish);
+    },
+    function(err) {
+      showMessage('Erro ao obter localização: ' + err.message, 'error');
+    },
+    { enableHighAccuracy: true, timeout: 15000 }
+  );
+}
+
+function cancelVisit() {
+  state.currentVisit = null;
+  saveState();
+  document.getElementById('registroView').style.display = 'block';
+  document.getElementById('finalizarView').style.display = 'none';
+  document.getElementById('status').textContent = '—';
+  document.getElementById('locationName').textContent = '—';
+  document.getElementById('startDateTime').value = '';
+  document.getElementById('startLocationName').value = '';
+  showMessage('Visita cancelada.');
+}
+
+function renderVisitsList() {
+  const visitsList = document.getElementById('visitsList');
+  if (state.visits.length === 0) {
+    visitsList.innerHTML = '<div class="empty-state">Nenhuma visita registrada.</div>';
+    return;
+  }
+  visitsList.innerHTML = state.visits.map(function(visit, idx) {
+    const start = new Date(visit.startDateTime);
+    return '<div class="visit-card">' +
+      '<div class="visit-date">' + start.toLocaleString('pt-BR') + '</div>' +
+      '<div class="visit-location"><strong>' + visit.startLocationName + '</strong> \u2192 <strong>' + visit.endLocationName + '</strong></div>' +
+      '<div class="visit-km">' + (visit.distance || 0).toFixed(2) + ' km</div>' +
+      (visit.notes ? '<div style="font-size:11px;color:#888;margin-top:4px;">' + visit.notes + '</div>' : '') +
+      '<button class="btn-danger full-w" style="margin-top:8px;font-size:12px;" onclick="deleteVisit(' + idx + ')">Deletar</button>' +
+      '</div>';
+  }).join('');
+}
+
+function renderReportList() {
+  const reportList = document.getElementById('reportList');
+  if (state.visits.length === 0) {
+    reportList.innerHTML = '<div class="empty-state">Nenhuma visita para selecionar.</div>';
+    return;
+  }
+  reportList.innerHTML = state.visits.map(function(visit, idx) {
+    const start = new Date(visit.startDateTime);
+    const isSelected = state.selectedVisits.has(idx);
+    return '<div class="visit-card" style="cursor:pointer;" onclick="toggleSelect(' + idx + ')">' +
+      '<div class="visit-header">' +
+      '<input type="checkbox" class="checkbox" ' + (isSelected ? 'checked' : '') + ' readonly>' +
+      '<div style="flex:1;">' +
+      '<div class="visit-date">' + start.toLocaleString('pt-BR') + '</div>' +
+      '<div class="visit-location" style="margin:2px 0;">' + visit.startLocationName + ' \u2192 ' + visit.endLocationName + '</div>' +
+      '<div class="visit-km">' + (visit.distance || 0).toFixed(2) + ' km</div>' +
+      '</div></div></div>';
+  }).join('');
+  updateSummary();
+}
+
+function renderPeriodView() {
+  const today = new Date().toISOString().slice(0, 10);
+  if (!document.getElementById('periodFrom').value) document.getElementById('periodFrom').value = today;
+  if (!document.getElementById('periodTo').value) document.getElementById('periodTo').value = today;
+}
+
+function toggleSelect(idx) {
+  if (state.selectedVisits.has(idx)) state.selectedVisits.delete(idx);
+  else state.selectedVisits.add(idx);
+  renderReportList();
+}
+
+function selectAllForReport() {
+  state.selectedVisits = new Set(state.visits.map(function(_, i) { return i; }));
+  renderReportList();
+}
+
+function deselectAllForReport() {
+  state.selectedVisits.clear();
+  renderReportList();
+}
+
+function updateSummary() {
+  const total = Array.from(state.selectedVisits).reduce(function(sum, idx) {
+    return sum + (state.visits[idx] ? state.visits[idx].distance : 0);
+  }, 0);
+  document.getElementById('totalKm').textContent = total.toFixed(2) + ' km';
+  document.getElementById('selectedCount').textContent = state.selectedVisits.size;
+}
+
+function deleteVisit(idx) {
+  if (confirm('Deseja deletar esta visita?')) {
+    state.visits.splice(idx, 1);
+    state.selectedVisits.delete(idx);
+    saveState();
+    renderVisitsList();
+    showMessage('Visita deletada.');
+  }
+}
+
+function applyFilter() {
+  const from = document.getElementById('filterFrom').value;
+  const to = document.getElementById('filterTo').value;
+  if (!from || !to) {
+    showMessage('Preencha as datas inicial e final.', 'error');
+    return;
+  }
+  const fromDate = new Date(from);
+  const toDate = new Date(to);
+  toDate.setHours(23, 59, 59);
+  const visitsList = document.getElementById('visitsList');
+  const filtered = state.visits.filter(function(v) {
+    const d = new Date(v.startDateTime);
+    return d >= fromDate && d <= toDate;
+  });
+  if (filtered.length === 0) {
+    visitsList.innerHTML = '<div class="empty-state">Nenhuma visita neste período.</div>';
+    return;
+  }
+  visitsList.innerHTML = filtered.map(function(visit) {
+    const start = new Date(visit.startDateTime);
+    return '<div class="visit-card">' +
+      '<div class="visit-date">' + start.toLocaleString('pt-BR') + '</div>' +
+      '<div class="visit-location"><strong>' + visit.startLocationName + '</strong> \u2192 <strong>' + visit.endLocationName + '</strong></div>' +
+      '<div class="visit-km">' + (visit.distance || 0).toFixed(2) + ' km</div>' +
+      '</div>';
+  }).join('');
+}
+
+function exportPDF() {
+  if (state.selectedVisits.size === 0) {
+    showMessage('Selecione pelo menos uma visita para exportar.', 'error');
+    return;
+  }
+  buildPdf(Array.from(state.selectedVisits).map(function(i) { return state.visits[i]; }),
+    'Relatório de Visitas', 'Visitas_' + new Date().toISOString().slice(0, 10) + '.pdf');
+}
+
+function generatePeriodPDF() {
+  const from = document.getElementById('periodFrom').value;
+  const to = document.getElementById('periodTo').value;
+  if (!from || !to) {
+    showMessage('Preencha as datas inicial e final.', 'error');
+    return;
+  }
+  const fromDate = new Date(from);
+  const toDate = new Date(to);
+  toDate.setHours(23, 59, 59);
+  const filtered = state.visits.filter(function(v) {
+    const d = new Date(v.startDateTime);
+    return d >= fromDate && d <= toDate;
+  });
+  if (filtered.length === 0) {
+    showMessage('Nenhuma visita neste período.', 'error');
+    return;
+  }
+  const dataInicio = new Date(from).toLocaleDateString('pt-BR');
+  const dataFim = new Date(to).toLocaleDateString('pt-BR');
+  buildPdf(filtered, 'Relatório de Visitas por Período', 'Relatorio_Visitas_' + from + '_ate_' + to + '.pdf', 'Período: ' + dataInicio + ' a ' + dataFim);
+}
+
+function buildPdf(visits, title, filename, periodLine) {
+  const jsPDF = window.jspdf.jsPDF;
+  const doc = new jsPDF();
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  let y = 20;
+
+  doc.setFontSize(16);
+  doc.text(title, 20, y);
+  y += 10;
+
+  doc.setFontSize(10);
+  if (periodLine) {
+    doc.text(periodLine, 20, y);
+    y += 4;
+  }
+  doc.text('Gerado em: ' + new Date().toLocaleString('pt-BR'), 20, y);
+  y += 8;
+
+  doc.setDrawColor(200);
+  doc.line(20, y, pageWidth - 20, y);
+  y += 8;
+
+  let totalKm = 0;
+  visits.forEach(function(visit, idx) {
+    if (y > pageHeight - 30) { doc.addPage(); y = 20; }
+    totalKm += visit.distance;
+
+    doc.setFontSize(11);
+    doc.setFont(undefined, 'bold');
+    doc.text((idx + 1) + '. ' + visit.startLocationName + ' -> ' + visit.endLocationName, 20, y);
+    y += 6;
+
+    doc.setFontSize(9);
+    doc.setFont(undefined, 'normal');
+    doc.text('Saída: ' + new Date(visit.startDateTime).toLocaleString('pt-BR'), 22, y);
+    y += 4;
+    doc.text('Chegada: ' + new Date(visit.endDateTime).toLocaleString('pt-BR'), 22, y);
+    y += 4;
+    doc.text('Distância: ' + visit.distance.toFixed(2) + ' km', 22, y);
+    y += 4;
+    if (visit.notes) {
+      doc.text('Obs: ' + visit.notes, 22, y);
+      y += 4;
+    }
+    y += 4;
+  });
+
+  if (y > pageHeight - 20) { doc.addPage(); y = 20; }
+  doc.setDrawColor(200);
+  doc.line(20, y, pageWidth - 20, y);
+  y += 8;
+
+  doc.setFontSize(12);
+  doc.setFont(undefined, 'bold');
+  doc.text('Total de quilometragem: ' + totalKm.toFixed(2) + ' km', 20, y);
+  doc.text('Total de visitas: ' + visits.length, 20, y + 6);
+
+  doc.save(filename);
+  showMessage('PDF "' + filename + '" baixado com sucesso!');
+}
+
+(function() {
+  const now = new Date();
+  document.getElementById('startDateTime').value = now.toISOString().slice(0, 16);
+})();
+</script>
+</body>
+</html>
