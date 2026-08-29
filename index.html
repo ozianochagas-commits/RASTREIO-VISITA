@@ -71,6 +71,15 @@
   .full-w { width: 100%; margin-bottom: 8px; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
   .hint { font-size: 11px; color: var(--text-dim); margin-top: -4px; margin-bottom: 12px; line-height: 1.4; }
+  .suggestions { margin-top: 4px; border-radius: 8px; overflow: hidden; }
+  .suggestions:empty { display: none; }
+  .suggestion-item { background: var(--card); border: 1px solid var(--border-c); border-top: none; padding: 12px; font-size: 13px; cursor: pointer; color: var(--text); line-height: 1.35; }
+  .suggestion-item:first-child { border-top: 1px solid var(--border-c); border-radius: 8px 8px 0 0; }
+  .suggestion-item:last-child { border-radius: 0 0 8px 8px; }
+  .suggestion-item:active, .suggestion-item:hover { background: #232323; }
+  .suggestion-item .sug-main { font-weight: 600; }
+  .suggestion-item .sug-sub { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+  .suggestion-loading { padding: 10px 12px; font-size: 12px; color: var(--text-dim); background: var(--card); border: 1px solid var(--border-c); border-radius: 8px; }
 </style>
 </head>
 <body>
@@ -115,7 +124,9 @@
     </div>
     <div class="form-group">
       <label>Nome do local *</label>
-      <input type="text" id="visitLocationName" placeholder="Ex: Escritório, Casa, Loja do cliente">
+      <input type="text" id="visitLocationName" placeholder="Digite o endereço ou nome do lugar" autocomplete="off">
+      <div id="suggestions" class="suggestions"></div>
+      <p class="hint" style="margin-top:6px; margin-bottom:0;">Digite um endereço e toque numa sugestão para usar a localização exata dele — funciona mesmo sem o GPS do celular.</p>
     </div>
     <div class="form-group">
       <label>Observações (opcional)</label>
@@ -300,6 +311,72 @@ function reverseGeocode(lat, lon) {
     .catch(function() { return { short: 'Local (sem GPS)', full: 'Local (sem GPS)' }; });
 }
 
+let searchTimer = null;
+let selectedFromSearch = null;
+
+function onLocationInput() {
+  const q = document.getElementById('visitLocationName').value.trim();
+  selectedFromSearch = null;
+  const box = document.getElementById('suggestions');
+
+  if (q.length < 3) {
+    box.innerHTML = '';
+    return;
+  }
+
+  clearTimeout(searchTimer);
+  box.innerHTML = '<div class="suggestion-loading">Buscando endereços...</div>';
+
+  searchTimer = setTimeout(function() {
+    let url = 'https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=6&countrycodes=br&q=' + encodeURIComponent(q);
+    if (lastKnownPosition) {
+      const lat = lastKnownPosition.coords.latitude;
+      const lng = lastKnownPosition.coords.longitude;
+      const d = 0.15;
+      url += '&viewbox=' + (lng - d) + ',' + (lat - d) + ',' + (lng + d) + ',' + (lat + d) + '&bounded=0';
+    }
+
+    fetch(url)
+      .then(function(r) { return r.json(); })
+      .then(function(results) {
+        if (!results || results.length === 0) {
+          box.innerHTML = '<div class="suggestion-loading">Nenhum endereço encontrado. Você pode registrar com o texto digitado mesmo assim.</div>';
+          return;
+        }
+        box.innerHTML = results.map(function(item) {
+          const a = item.address || {};
+          const rua = a.road || a.pedestrian || a.residential || a.amenity || item.name || '';
+          const numero = a.house_number || '';
+          const bairro = a.suburb || a.neighbourhood || a.city_district || '';
+          const cidade = a.city || a.town || a.village || a.municipality || '';
+          const uf = a.state_code || (a.state ? a.state.substring(0, 2).toUpperCase() : '');
+          let main = rua;
+          if (numero) main += (main ? ', ' : '') + numero;
+          if (!main) main = item.display_name.split(',')[0];
+          let sub = [bairro, cidade, uf].filter(Boolean).join(' - ');
+          const dataAttr = encodeURIComponent(JSON.stringify({ lat: parseFloat(item.lat), lng: parseFloat(item.lon), name: main, full: item.display_name }));
+          return '<div class="suggestion-item" onclick="pickSuggestion(\'' + dataAttr + '\')">' +
+            '<div class="sug-main">' + main + '</div>' +
+            (sub ? '<div class="sug-sub">' + sub + '</div>' : '') +
+            '</div>';
+        }).join('');
+      })
+      .catch(function() {
+        box.innerHTML = '<div class="suggestion-loading">Erro ao buscar. Verifique a internet.</div>';
+      });
+  }, 500);
+}
+
+function pickSuggestion(dataAttr) {
+  const data = JSON.parse(decodeURIComponent(dataAttr));
+  selectedFromSearch = data;
+  document.getElementById('visitLocationName').value = data.name;
+  document.getElementById('suggestions').innerHTML = '';
+  document.getElementById('addressValue').textContent = data.full;
+  document.getElementById('status').textContent = 'Local selecionado';
+  showMessage('Local selecionado: ' + data.name);
+}
+
 function checkGeoSupport() {
   if (!('geolocation' in navigator)) {
     showMessage('Este navegador não suporta geolocalização.', 'error');
@@ -370,14 +447,13 @@ function registerVisit() {
     showMessage('Digite o nome do local antes de registrar.', 'error');
     return;
   }
-  if (!checkGeoSupport()) return;
-
   const btn = document.getElementById('btnRegister');
   btn.disabled = true;
   btn.textContent = 'Registrando...';
 
-  function finish(lat, lng) {
+  function finish(lat, lng, displayName) {
     const submitTime = new Date();
+    const finalName = displayName || locationName;
     let distance = 0;
     let fromLocationName = 'Ponto de partida';
     if (state.lastLocation) {
@@ -387,7 +463,7 @@ function registerVisit() {
 
     state.visits.push({
       dateTime: submitTime.toISOString(),
-      locationName: locationName,
+      locationName: finalName,
       fromLocationName: fromLocationName,
       lat: lat,
       lng: lng,
@@ -395,16 +471,18 @@ function registerVisit() {
       notes: notes
     });
 
-    state.lastLocation = { lat: lat, lng: lng, name: locationName };
+    state.lastLocation = { lat: lat, lng: lng, name: finalName };
     saveState();
     updateLastLocationLabel();
 
     document.getElementById('visitLocationName').value = '';
     document.getElementById('visitNotes').value = '';
+    document.getElementById('suggestions').innerHTML = '';
     document.getElementById('status').textContent = '—';
     document.getElementById('addressValue').textContent = 'Toque em "Solicitar localização" para detectar o endereço';
+    selectedFromSearch = null;
 
-    showMessage('✓ Visita registrada em ' + locationName + ' às ' + submitTime.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'}) + '! Distância desde o último local: ' + distance.toFixed(2) + ' km');
+    showMessage('✓ Visita registrada em ' + finalName + ' às ' + submitTime.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'}) + '! Distância desde o último local: ' + distance.toFixed(2) + ' km');
 
     btn.disabled = false;
     btn.textContent = '✓ Registrado com sucesso!';
@@ -417,21 +495,34 @@ function registerVisit() {
     document.getElementById('visitDateTime').value = formatLocalDateTimeInput(new Date());
   }
 
+  // 1) Se o usuário escolheu um endereço na busca, usa as coordenadas exatas dele
+  if (selectedFromSearch) {
+    finish(selectedFromSearch.lat, selectedFromSearch.lng, selectedFromSearch.name);
+    return;
+  }
+
+  // 2) Se já solicitou a localização e o GPS respondeu, usa ela
   if (lastKnownPosition) {
     finish(lastKnownPosition.coords.latitude, lastKnownPosition.coords.longitude);
     lastKnownPosition = null;
     return;
   }
 
+  // 3) Última tentativa: pedir GPS agora
+  if (!checkGeoSupport()) {
+    btn.disabled = false;
+    btn.textContent = 'Registrar visita';
+    return;
+  }
+
   navigator.geolocation.getCurrentPosition(
     function(pos) { finish(pos.coords.latitude, pos.coords.longitude); },
     function(err) {
-      let msg = 'Não foi possível obter a localização.';
-      if (err.code === 1) msg = 'Permissão de GPS negada. Toque em "Solicitar localização" e permita o acesso.';
-      if (err.code === 2) msg = 'Localização indisponível. Verifique se o GPS do celular está ligado.';
-      if (err.code === 3) msg = 'Tempo esgotado ao buscar localização. Tente novamente.';
+      let msg = 'GPS indisponível. Dica: digite o endereço no campo do local e toque numa sugestão para registrar sem GPS.';
+      if (err.code === 1) msg = 'Permissão de GPS negada. Digite o endereço e escolha uma sugestão para registrar sem GPS.';
       showMessage(msg, 'error');
       document.getElementById('btnRegister').disabled = false;
+      document.getElementById('btnRegister').textContent = 'Registrar visita';
     },
     { enableHighAccuracy: true, timeout: 15000 }
   );
@@ -787,6 +878,8 @@ function formatLocalDateTimeInput(d) {
   setInterval(function() {
     document.getElementById('visitDateTime').value = formatLocalDateTimeInput(new Date());
   }, 1000);
+
+  document.getElementById('visitLocationName').addEventListener('input', onLocationInput);
 
   updateLastLocationLabel();
 
