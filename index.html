@@ -86,15 +86,10 @@
   </div>
 
   <div id="registro" class="tab-content active">
-    <div class="status-grid">
-      <div class="status-card">
-        <div class="status-label">Localização</div>
-        <div class="status-value" id="status">—</div>
-      </div>
-      <div class="status-card">
-        <div class="status-label">Coordenadas</div>
-        <div class="status-value" id="coordsValue" style="font-size: 12px;">—</div>
-      </div>
+    <div class="status-card" style="margin-bottom: 1.5rem;">
+      <div class="status-label">Localização</div>
+      <div class="status-value" id="status" style="margin-bottom: 8px;">—</div>
+      <div id="addressValue" style="font-size: 13px; color: var(--text-dim); line-height: 1.4;">Toque em "Solicitar localização" para detectar o endereço</div>
     </div>
 
     <button class="btn-primary full-w" id="btnRequestLoc" onclick="requestLocation()" style="margin-bottom: 1rem;">Solicitar localização do celular</button>
@@ -220,12 +215,30 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
 }
 
 function reverseGeocode(lat, lon) {
-  return fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat=' + lat + '&lon=' + lon)
+  return fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat=' + lat + '&lon=' + lon + '&addressdetails=1')
     .then(function(r) { return r.json(); })
     .then(function(data) {
-      return (data.address && (data.address.city || data.address.town || data.address.village)) || 'Local desconhecido';
+      const a = data.address || {};
+      const rua = a.road || a.pedestrian || a.residential || '';
+      const numero = a.house_number || '';
+      const bairro = a.suburb || a.neighbourhood || a.city_district || '';
+      const cidade = a.city || a.town || a.village || a.municipality || '';
+      const uf = a.state_code || (a.state ? a.state.substring(0, 2).toUpperCase() : '');
+
+      let linha1 = rua;
+      if (numero) linha1 += (linha1 ? ', ' : '') + numero;
+      if (bairro) linha1 += (linha1 ? ' - ' : '') + bairro;
+
+      let linha2 = cidade;
+      if (uf) linha2 += (linha2 ? ' - ' : '') + uf;
+
+      const full = [linha1, linha2].filter(Boolean).join(', ');
+      return {
+        short: linha1 || cidade || 'Local desconhecido',
+        full: full || 'Local desconhecido'
+      };
     })
-    .catch(function() { return 'Local (sem GPS)'; });
+    .catch(function() { return { short: 'Local (sem GPS)', full: 'Local (sem GPS)' }; });
 }
 
 function checkGeoSupport() {
@@ -249,6 +262,7 @@ function requestLocation() {
   btn.disabled = true;
   btn.textContent = 'Buscando localização...';
   document.getElementById('status').textContent = 'Buscando...';
+  document.getElementById('addressValue').textContent = 'Detectando endereço...';
 
   navigator.geolocation.getCurrentPosition(
     function(pos) {
@@ -256,14 +270,20 @@ function requestLocation() {
       const lat = pos.coords.latitude;
       const lng = pos.coords.longitude;
       document.getElementById('status').textContent = 'GPS ativo';
-      document.getElementById('coordsValue').textContent = lat.toFixed(5) + ', ' + lng.toFixed(5);
       btn.disabled = false;
       btn.textContent = 'Localização atualizada ✓';
       showMessage('Localização obtida com sucesso!');
       setTimeout(function() { btn.textContent = 'Solicitar localização do celular'; }, 2500);
+
+      reverseGeocode(lat, lng).then(function(addr) {
+        document.getElementById('addressValue').textContent = addr.full;
+        const nameField = document.getElementById('startLocationName');
+        if (!nameField.value.trim()) nameField.value = addr.short;
+      });
     },
     function(err) {
       document.getElementById('status').textContent = 'Erro';
+      document.getElementById('addressValue').textContent = 'Não foi possível detectar o endereço.';
       btn.disabled = false;
       btn.textContent = 'Solicitar localização do celular';
       let msg = 'Não foi possível obter a localização.';
@@ -301,7 +321,6 @@ function startVisit() {
     };
     saveState();
     document.getElementById('status').textContent = 'Ativa';
-    document.getElementById('coordsValue').textContent = lat.toFixed(5) + ', ' + lng.toFixed(5);
     document.getElementById('registroView').style.display = 'none';
     document.getElementById('finalizarView').style.display = 'block';
     document.getElementById('endDateTime').value = new Date().toISOString().slice(0, 16);
@@ -364,7 +383,7 @@ function saveVisit() {
         document.getElementById('registroView').style.display = 'block';
         document.getElementById('finalizarView').style.display = 'none';
         document.getElementById('status').textContent = '—';
-        document.getElementById('coordsValue').textContent = '—';
+        document.getElementById('addressValue').textContent = 'Toque em "Solicitar localização" para detectar o endereço';
         document.getElementById('startDateTime').value = '';
         document.getElementById('startLocationName').value = '';
         document.getElementById('endDateTime').value = '';
@@ -373,7 +392,7 @@ function saveVisit() {
         showMessage('Visita salva! Distância: ' + distance.toFixed(2) + ' km');
       };
       if (endLocationName) finish(endLocationName);
-      else reverseGeocode(lat, lng).then(finish);
+      else reverseGeocode(lat, lng).then(function(addr) { finish(addr.short); });
     },
     function(err) {
       showMessage('Erro ao obter localização: ' + err.message, 'error');
@@ -388,7 +407,7 @@ function cancelVisit() {
   document.getElementById('registroView').style.display = 'block';
   document.getElementById('finalizarView').style.display = 'none';
   document.getElementById('status').textContent = '—';
-  document.getElementById('coordsValue').textContent = '—';
+  document.getElementById('addressValue').textContent = 'Toque em "Solicitar localização" para detectar o endereço';
   document.getElementById('startDateTime').value = '';
   document.getElementById('startLocationName').value = '';
   showMessage('Visita cancelada.');
