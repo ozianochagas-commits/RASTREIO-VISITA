@@ -133,6 +133,7 @@
     <button class="tab-btn" onclick="switchTab('historico')">Histórico</button>
     <button class="tab-btn" onclick="switchTab('relatorio')">Relatório</button>
     <button class="tab-btn" onclick="switchTab('periodo')">Período</button>
+    <button class="tab-btn" onclick="switchTab('combustivel')">Combustível</button>
   </div>
 
   <div id="registro" class="tab-content active">
@@ -230,8 +231,71 @@
     <div id="periodList"></div>
   </div>
 
+  <div id="combustivel" class="tab-content">
+    <div class="filter-group">
+      <h3>Configurar combustível</h3>
+      <div class="form-group">
+        <label>Preço do combustível (R$ por litro)</label>
+        <input type="number" id="fuelPrice" step="0.01" min="0" placeholder="Ex: 6.29" inputmode="decimal">
+      </div>
+      <div class="form-group">
+        <label>Consumo do carro (km por litro)</label>
+        <input type="number" id="fuelKmL" step="0.1" min="0" placeholder="Ex: 12" inputmode="decimal">
+      </div>
+      <div class="form-group">
+        <label>Fator de correção de estrada</label>
+        <input type="number" id="roadFactor" step="0.01" min="1" placeholder="Ex: 1.35" inputmode="decimal">
+        <p class="hint" style="margin-top:6px; margin-bottom:0;">O GPS mede em linha reta; as estradas são mais longas. O fator ajusta para a distância real rodada. Padrão: 1.35 (calibrado pelo seu trajeto real). Ruas urbanas: ~1.3; estradas retas: ~1.2; muitas curvas: ~1.4.</p>
+      </div>
+      <button class="btn-primary full-w" onclick="saveFuelConfig()">Salvar configuração</button>
+    </div>
+
+    <div class="filter-group">
+      <h3>Calcular gasto por período</h3>
+      <div class="grid2">
+        <div class="form-group" style="margin-bottom: 0;">
+          <label>Data inicial</label>
+          <input type="date" id="fuelFrom" onchange="calcFuel()">
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
+          <label>Data final</label>
+          <input type="date" id="fuelTo" onchange="calcFuel()">
+        </div>
+      </div>
+      <button class="full-w" onclick="calcFuel()">Calcular gasto</button>
+      <button class="btn-export full-w" onclick="exportFuelPDF()">Exportar gasto em PDF</button>
+    </div>
+
+    <div id="fuelResult"></div>
+
+    <div class="filter-group">
+      <h3>Registrar abastecimento</h3>
+      <div class="form-group">
+        <label>Data</label>
+        <input type="date" id="refuelDate">
+      </div>
+      <div class="grid2">
+        <div class="form-group" style="margin-bottom:0;">
+          <label>Valor pago (R$)</label>
+          <input type="number" id="refuelValue" step="0.01" min="0" placeholder="Ex: 150.00" inputmode="decimal">
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label>Litros</label>
+          <input type="number" id="refuelLiters" step="0.01" min="0" placeholder="Ex: 23.8" inputmode="decimal">
+        </div>
+      </div>
+      <div class="form-group" style="margin-top:12px;">
+        <label>Posto (opcional)</label>
+        <input type="text" id="refuelStation" placeholder="Ex: Posto Ipiranga - Centro">
+      </div>
+      <button class="btn-primary full-w" onclick="addRefuel()">Adicionar abastecimento</button>
+    </div>
+
+    <div id="refuelList"></div>
+  </div>
+
   <div style="text-align:center; color:var(--orange); font-size:12px; margin-top:1.5rem; padding:12px; border:1px dashed var(--orange); border-radius:8px;">
-    ✓ Versão 2.2 — GPS de alta precisão + PDF novo<br>
+    ✓ Versão 2.5 — Distância corrigida por estrada (fator 1.35)<br>
     <span id="loadStamp" style="color:var(--text-dim); font-size:10px;"></span>
   </div>
 </div>
@@ -241,6 +305,8 @@
 const state = {
   visits: JSON.parse(localStorage.getItem('visits') || '[]'),
   lastLocation: JSON.parse(localStorage.getItem('lastLocation') || 'null'),
+  fuel: JSON.parse(localStorage.getItem('fuelConfig') || '{"price":null,"kml":null}'),
+  refuels: JSON.parse(localStorage.getItem('refuels') || '[]'),
   selectedVisits: new Set()
 };
 
@@ -313,7 +379,13 @@ function switchTab(tab) {
   if (tab === 'historico') renderVisitsList();
   if (tab === 'relatorio') renderReportList();
   if (tab === 'periodo') renderPeriodView();
+  if (tab === 'combustivel') renderFuelView();
   if (tab === 'registro') updateLastLocationLabel();
+}
+
+function getRoadFactor() {
+  const f = parseFloat(localStorage.getItem('roadFactor'));
+  return (!isNaN(f) && f > 0) ? f : 1.35;
 }
 
 function haversineDistance(lat1, lon1, lat2, lon2) {
@@ -324,7 +396,7 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
     Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
+  return R * c * getRoadFactor();
 }
 
 function reverseGeocode(lat, lon) {
@@ -987,12 +1059,278 @@ function buildPdf(visits, title, filename, periodLine) {
   showMessage('PDF "' + filename + '" baixado com sucesso!');
 }
 
+function renderFuelView() {
+  if (state.fuel.price != null) document.getElementById('fuelPrice').value = state.fuel.price;
+  if (state.fuel.kml != null) document.getElementById('fuelKmL').value = state.fuel.kml;
+  document.getElementById('roadFactor').value = getRoadFactor().toFixed(2);
+
+  const today = new Date().toISOString().slice(0, 10);
+  let earliest = today;
+  if (state.visits.length > 0) {
+    const dates = state.visits.map(function(v) { return v.dateTime.slice(0, 10); });
+    earliest = dates.reduce(function(a, b) { return a < b ? a : b; });
+  }
+  if (!document.getElementById('fuelFrom').value) document.getElementById('fuelFrom').value = earliest;
+  if (!document.getElementById('fuelTo').value) document.getElementById('fuelTo').value = today;
+  if (!document.getElementById('refuelDate').value) document.getElementById('refuelDate').value = today;
+  renderRefuelList();
+  calcFuel();
+}
+
+function saveFuelConfig() {
+  const price = parseFloat(document.getElementById('fuelPrice').value);
+  const kml = parseFloat(document.getElementById('fuelKmL').value);
+  if (isNaN(price) || price <= 0) {
+    showMessage('Digite um preço válido para o combustível.', 'error');
+    return;
+  }
+  if (isNaN(kml) || kml <= 0) {
+    showMessage('Digite um consumo válido (km por litro).', 'error');
+    return;
+  }
+  state.fuel = { price: price, kml: kml };
+  try { localStorage.setItem('fuelConfig', JSON.stringify(state.fuel)); } catch (e) {}
+
+  const rf = parseFloat(document.getElementById('roadFactor').value);
+  if (!isNaN(rf) && rf > 0) {
+    try { localStorage.setItem('roadFactor', String(rf)); } catch (e) {}
+    showMessage('Configuração salva! R$ ' + price.toFixed(2) + '/L · ' + kml + ' km/L · fator ' + rf.toFixed(2));
+  } else {
+    showMessage('Configuração salva! Preço R$ ' + price.toFixed(2) + '/L, consumo ' + kml + ' km/L');
+  }
+  calcFuel();
+}
+
+function getFuelPeriodData() {
+  const from = document.getElementById('fuelFrom').value;
+  const to = document.getElementById('fuelTo').value;
+  if (!from || !to) return null;
+  const filtered = state.visits.filter(function(v) {
+    const d = v.dateTime.slice(0, 10);
+    return d >= from && d <= to;
+  });
+  const totalKm = filtered.reduce(function(s, v) { return s + (v.distance || 0); }, 0);
+  return { from: from, to: to, count: filtered.length, totalKm: totalKm };
+}
+
+function calcFuel() {
+  const box = document.getElementById('fuelResult');
+  const data = getFuelPeriodData();
+  if (!data) { box.innerHTML = ''; return; }
+
+  if (state.fuel.price == null || state.fuel.kml == null) {
+    box.innerHTML = '<div class="empty-state">Configure o preço e o consumo acima para calcular o gasto.</div>';
+    return;
+  }
+
+  const litros = data.totalKm / state.fuel.kml;
+  const custo = litros * state.fuel.price;
+  const refuel = getRefuelPeriodData(data.from, data.to);
+
+  let comparativo = '';
+  if (refuel.count > 0) {
+    const diff = refuel.totalValue - custo;
+    const diffLabel = diff >= 0
+      ? 'Você abasteceu R$ ' + diff.toFixed(2) + ' a mais que o estimado rodado.'
+      : 'Você abasteceu R$ ' + Math.abs(diff).toFixed(2) + ' a menos que o estimado rodado.';
+    comparativo = '<div class="visit-card" style="border-color:var(--orange);">' +
+      '<div class="visit-location" style="color:var(--orange); font-weight:600;">Abastecimentos reais no período</div>' +
+      '<div class="visit-location">Total abastecido: <strong>R$ ' + refuel.totalValue.toFixed(2) + '</strong></div>' +
+      '<div class="visit-location">Litros abastecidos: <strong>' + refuel.totalLiters.toFixed(2) + ' L</strong></div>' +
+      '<div class="visit-location">Nº de abastecimentos: <strong>' + refuel.count + '</strong></div>' +
+      '<div class="visit-location" style="margin-top:6px; font-size:12px;">' + diffLabel + '</div>' +
+      '</div>';
+  }
+
+  box.innerHTML = '<div class="summary">' +
+    '<div style="font-size:13px;">Gasto estimado com combustível</div>' +
+    '<div class="summary-value">R$ ' + custo.toFixed(2) + '</div>' +
+    '<div style="font-size:12px;">' + data.totalKm.toFixed(2) + ' km · ' + litros.toFixed(2) + ' litros · ' + data.count + ' visita(s)</div>' +
+    '</div>' +
+    '<div class="visit-card">' +
+    '<div class="visit-location">Distância total: <strong>' + data.totalKm.toFixed(2) + ' km</strong></div>' +
+    '<div class="visit-location">Consumo: <strong>' + state.fuel.kml + ' km/litro</strong></div>' +
+    '<div class="visit-location">Litros necessários: <strong>' + litros.toFixed(2) + ' L</strong></div>' +
+    '<div class="visit-location">Preço do litro: <strong>R$ ' + state.fuel.price.toFixed(2) + '</strong></div>' +
+    '<div class="visit-km" style="margin-top:6px;">Estimado: R$ ' + custo.toFixed(2) + '</div>' +
+    '</div>' + comparativo;
+}
+
+function exportFuelPDF() {
+  const data = getFuelPeriodData();
+  if (!data) {
+    showMessage('Preencha as datas.', 'error');
+    return;
+  }
+  if (state.fuel.price == null || state.fuel.kml == null) {
+    showMessage('Configure o preço e o consumo primeiro.', 'error');
+    return;
+  }
+  if (data.count === 0) {
+    showMessage('Nenhuma visita neste período.', 'error');
+    return;
+  }
+
+  const litros = data.totalKm / state.fuel.kml;
+  const custo = litros * state.fuel.price;
+
+  const jsPDF = window.jspdf.jsPDF;
+  const doc = new jsPDF();
+  const pageWidth = doc.internal.pageSize.getWidth();
+  let y = 20;
+
+  doc.setFontSize(16);
+  doc.text('Relatório de Gasto com Combustível', 20, y);
+  y += 10;
+  doc.setFontSize(10);
+  doc.text('Período: ' + new Date(data.from).toLocaleDateString('pt-BR') + ' a ' + new Date(data.to).toLocaleDateString('pt-BR'), 20, y);
+  y += 5;
+  doc.text('Gerado em: ' + new Date().toLocaleString('pt-BR'), 20, y);
+  y += 8;
+  doc.setDrawColor(200);
+  doc.line(20, y, pageWidth - 20, y);
+  y += 10;
+
+  doc.setFontSize(11);
+  doc.setFont(undefined, 'normal');
+  doc.text('Distância total percorrida: ' + data.totalKm.toFixed(2) + ' km', 20, y); y += 7;
+  doc.text('Total de visitas: ' + data.count, 20, y); y += 7;
+  doc.text('Consumo do veículo: ' + state.fuel.kml + ' km/litro', 20, y); y += 7;
+  doc.text('Litros necessários: ' + litros.toFixed(2) + ' L', 20, y); y += 7;
+  doc.text('Preço do combustível: R$ ' + state.fuel.price.toFixed(2) + ' /litro', 20, y); y += 10;
+
+  doc.setDrawColor(200);
+  doc.line(20, y, pageWidth - 20, y);
+  y += 10;
+  doc.setFontSize(13);
+  doc.setFont(undefined, 'bold');
+  doc.text('GASTO ESTIMADO (rodado): R$ ' + custo.toFixed(2), 20, y);
+  y += 12;
+
+  // Abastecimentos reais registrados no período
+  const refuel = getRefuelPeriodData(data.from, data.to);
+  if (refuel.count > 0) {
+    doc.setFontSize(12);
+    doc.setFont(undefined, 'bold');
+    doc.text('Abastecimentos registrados', 20, y);
+    y += 7;
+
+    doc.setFontSize(9);
+    doc.setFont(undefined, 'bold');
+    doc.text('Data', 20, y);
+    doc.text('Posto', 45, y);
+    doc.text('Litros', pageWidth - 70, y);
+    doc.text('Valor', pageWidth - 40, y);
+    y += 4;
+    doc.setDrawColor(220);
+    doc.line(20, y, pageWidth - 20, y);
+    y += 5;
+    doc.setFont(undefined, 'normal');
+
+    refuel.list.slice().sort(function(a, b) { return a.date < b.date ? -1 : 1; }).forEach(function(r) {
+      doc.text(new Date(r.date + 'T12:00:00').toLocaleDateString('pt-BR'), 20, y);
+      const posto = (r.station || '-').substring(0, 30);
+      doc.text(posto, 45, y);
+      doc.text(r.liters.toFixed(2), pageWidth - 70, y);
+      doc.text('R$ ' + r.value.toFixed(2), pageWidth - 40, y);
+      y += 6;
+    });
+
+    y += 2;
+    doc.setDrawColor(200);
+    doc.line(20, y, pageWidth - 20, y);
+    y += 8;
+    doc.setFontSize(12);
+    doc.setFont(undefined, 'bold');
+    doc.text('TOTAL ABASTECIDO: R$ ' + refuel.totalValue.toFixed(2) + ' (' + refuel.totalLiters.toFixed(2) + ' L)', 20, y);
+    y += 8;
+
+    const diff = refuel.totalValue - custo;
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+    const diffTxt = diff >= 0
+      ? 'Diferença: abasteceu R$ ' + diff.toFixed(2) + ' a mais que o estimado.'
+      : 'Diferença: abasteceu R$ ' + Math.abs(diff).toFixed(2) + ' a menos que o estimado.';
+    doc.text(diffTxt, 20, y);
+  }
+
+  doc.save('Combustivel_' + data.from + '_ate_' + data.to + '_' + timeStamp() + '.pdf');
+  showMessage('PDF de combustível baixado!');
+}
+
+function saveRefuels() {
+  try { localStorage.setItem('refuels', JSON.stringify(state.refuels)); } catch (e) {}
+}
+
+function addRefuel() {
+  const date = document.getElementById('refuelDate').value;
+  const value = parseFloat(document.getElementById('refuelValue').value);
+  const liters = parseFloat(document.getElementById('refuelLiters').value);
+  const station = document.getElementById('refuelStation').value.trim();
+
+  if (!date) { showMessage('Escolha a data do abastecimento.', 'error'); return; }
+  if (isNaN(value) || value <= 0) { showMessage('Digite o valor pago.', 'error'); return; }
+  if (isNaN(liters) || liters <= 0) { showMessage('Digite a quantidade de litros.', 'error'); return; }
+
+  state.refuels.push({ date: date, value: value, liters: liters, station: station });
+  saveRefuels();
+
+  document.getElementById('refuelValue').value = '';
+  document.getElementById('refuelLiters').value = '';
+  document.getElementById('refuelStation').value = '';
+
+  const precoLitro = value / liters;
+  showMessage('Abastecimento registrado! R$ ' + value.toFixed(2) + ' / ' + liters.toFixed(2) + ' L (R$ ' + precoLitro.toFixed(2) + '/L)');
+  renderRefuelList();
+  calcFuel();
+}
+
+function deleteRefuel(idx) {
+  if (confirm('Deseja excluir este abastecimento?')) {
+    state.refuels.splice(idx, 1);
+    saveRefuels();
+    renderRefuelList();
+    calcFuel();
+    showMessage('Abastecimento excluído.');
+  }
+}
+
+function renderRefuelList() {
+  const box = document.getElementById('refuelList');
+  if (!box) return;
+  if (state.refuels.length === 0) {
+    box.innerHTML = '<div class="empty-state">Nenhum abastecimento registrado ainda.</div>';
+    return;
+  }
+  const sorted = state.refuels.slice().sort(function(a, b) { return b.date < a.date ? -1 : 1; });
+  box.innerHTML = sorted.map(function(r) {
+    const idx = state.refuels.indexOf(r);
+    const precoLitro = r.value / r.liters;
+    return '<div class="visit-card">' +
+      '<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">' +
+      '<div class="visit-date">' + new Date(r.date + 'T12:00:00').toLocaleDateString('pt-BR') + '</div>' +
+      '<button class="trash-btn" onclick="deleteRefuel(' + idx + ')" aria-label="Excluir"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path></svg></button>' +
+      '</div>' +
+      (r.station ? '<div class="visit-location">' + r.station + '</div>' : '') +
+      '<div class="visit-location">' + r.liters.toFixed(2) + ' litros · R$ ' + precoLitro.toFixed(2) + '/L</div>' +
+      '<div class="visit-km">R$ ' + r.value.toFixed(2) + '</div>' +
+      '</div>';
+  }).join('');
+}
+
+function getRefuelPeriodData(from, to) {
+  const filtered = state.refuels.filter(function(r) { return r.date >= from && r.date <= to; });
+  const totalValue = filtered.reduce(function(s, r) { return s + r.value; }, 0);
+  const totalLiters = filtered.reduce(function(s, r) { return s + r.liters; }, 0);
+  return { list: filtered, count: filtered.length, totalValue: totalValue, totalLiters: totalLiters };
+}
+
 function exportBackup() {
   if (state.visits.length === 0) {
     showMessage('Nenhuma visita para exportar.', 'error');
     return;
   }
-  const data = JSON.stringify({ visits: state.visits, lastLocation: state.lastLocation }, null, 2);
+  const data = JSON.stringify({ visits: state.visits, lastLocation: state.lastLocation, fuel: state.fuel, refuels: state.refuels }, null, 2);
   const blob = new Blob([data], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1028,6 +1366,18 @@ function importBackup(event) {
       });
       if (data.lastLocation && !state.lastLocation) {
         state.lastLocation = data.lastLocation;
+      }
+      if (data.fuel && data.fuel.price != null) {
+        state.fuel = data.fuel;
+        try { localStorage.setItem('fuelConfig', JSON.stringify(state.fuel)); } catch (e) {}
+      }
+      if (data.refuels && Array.isArray(data.refuels)) {
+        const existing = new Set(state.refuels.map(function(r) { return r.date + r.value + r.liters; }));
+        data.refuels.forEach(function(r) {
+          const k = r.date + r.value + r.liters;
+          if (!existing.has(k)) { state.refuels.push(r); existing.add(k); }
+        });
+        saveRefuels();
       }
       saveState();
       renderVisitsList();
