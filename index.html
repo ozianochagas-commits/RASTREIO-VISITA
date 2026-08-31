@@ -294,6 +294,12 @@
         <label>Posto (opcional)</label>
         <input type="text" id="refuelStation" placeholder="Ex: Posto Ipiranga - Centro">
       </div>
+      <div class="form-group">
+        <label>Foto do comprovante (opcional)</label>
+        <input type="file" id="refuelPhoto" accept="image/*" style="display:none" onchange="onRefuelPhotoSelected(event)">
+        <button type="button" class="full-w" onclick="document.getElementById('refuelPhoto').click()">📷 Anexar foto do cupom</button>
+        <div id="refuelPhotoPreview" style="margin-top:10px;"></div>
+      </div>
       <button class="btn-primary full-w" onclick="addRefuel()">Adicionar abastecimento</button>
     </div>
 
@@ -301,7 +307,7 @@
   </div>
 
   <div style="text-align:center; color:var(--orange); font-size:12px; margin-top:1.5rem; padding:12px; border:1px dashed var(--orange); border-radius:8px;">
-    ✓ Versão 2.6 — Recalcular distâncias antigas<br>
+    ✓ Versão 2.7 — Foto do comprovante de abastecimento<br>
     <span id="loadStamp" style="color:var(--text-dim); font-size:10px;"></span>
   </div>
 </div>
@@ -1307,7 +1313,68 @@ function exportFuelPDF() {
 }
 
 function saveRefuels() {
-  try { localStorage.setItem('refuels', JSON.stringify(state.refuels)); } catch (e) {}
+  try {
+    localStorage.setItem('refuels', JSON.stringify(state.refuels));
+    return true;
+  } catch (e) {
+    showMessage('Erro ao salvar: armazenamento cheio. Tente remover fotos antigas ou abastecimentos.', 'error');
+    return false;
+  }
+}
+
+let pendingPhoto = null;
+
+function onRefuelPhotoSelected(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const preview = document.getElementById('refuelPhotoPreview');
+  preview.innerHTML = '<div class="suggestion-loading">Processando foto...</div>';
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const img = new Image();
+    img.onload = function() {
+      // Redimensiona para no máx 1000px no maior lado e comprime em JPEG
+      const maxDim = 1000;
+      let w = img.width, h = img.height;
+      if (w > h && w > maxDim) { h = h * maxDim / w; w = maxDim; }
+      else if (h > maxDim) { w = w * maxDim / h; h = maxDim; }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      pendingPhoto = canvas.toDataURL('image/jpeg', 0.6);
+
+      const kb = Math.round(pendingPhoto.length * 0.75 / 1024);
+      preview.innerHTML = '<img src="' + pendingPhoto + '" style="max-width:100%; border-radius:8px; border:1px solid var(--border-c);">' +
+        '<div style="font-size:11px; color:var(--text-dim); margin-top:4px;">Foto anexada (~' + kb + ' KB). <span style="color:#ff6b6b; cursor:pointer;" onclick="clearPendingPhoto()">Remover</span></div>';
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+  event.target.value = '';
+}
+
+function clearPendingPhoto() {
+  pendingPhoto = null;
+  document.getElementById('refuelPhotoPreview').innerHTML = '';
+}
+
+function viewRefuelPhoto(idx) {
+  const r = state.refuels[idx];
+  if (!r || !r.photo) return;
+  const modal = document.getElementById('addressModal');
+  // Reaproveita o overlay para mostrar a foto em tela cheia
+  const box = document.createElement('div');
+  box.className = 'modal-overlay open';
+  box.style.zIndex = '10001';
+  box.innerHTML = '<div class="modal-box" style="max-width:95vw;">' +
+    '<div class="modal-header"><span>Comprovante</span>' +
+    '<button class="modal-close" onclick="this.closest(\'.modal-overlay\').remove()">✕</button></div>' +
+    '<img src="' + r.photo + '" style="max-width:100%; border-radius:8px;">' +
+    '<a href="' + r.photo + '" download="comprovante_' + r.date + '.jpg"><button class="btn-primary full-w" style="margin-top:10px;">Baixar foto</button></a>' +
+    '</div>';
+  box.addEventListener('click', function(e) { if (e.target === box) box.remove(); });
+  document.body.appendChild(box);
 }
 
 function addRefuel() {
@@ -1320,12 +1387,14 @@ function addRefuel() {
   if (isNaN(value) || value <= 0) { showMessage('Digite o valor pago.', 'error'); return; }
   if (isNaN(liters) || liters <= 0) { showMessage('Digite a quantidade de litros.', 'error'); return; }
 
-  state.refuels.push({ date: date, value: value, liters: liters, station: station });
-  saveRefuels();
+  state.refuels.push({ date: date, value: value, liters: liters, station: station, photo: pendingPhoto });
+  const ok = saveRefuels();
+  if (!ok) { state.refuels.pop(); return; }
 
   document.getElementById('refuelValue').value = '';
   document.getElementById('refuelLiters').value = '';
   document.getElementById('refuelStation').value = '';
+  clearPendingPhoto();
 
   const precoLitro = value / liters;
   showMessage('Abastecimento registrado! R$ ' + value.toFixed(2) + ' / ' + liters.toFixed(2) + ' L (R$ ' + precoLitro.toFixed(2) + '/L)');
@@ -1362,6 +1431,7 @@ function renderRefuelList() {
       (r.station ? '<div class="visit-location">' + r.station + '</div>' : '') +
       '<div class="visit-location">' + r.liters.toFixed(2) + ' litros · R$ ' + precoLitro.toFixed(2) + '/L</div>' +
       '<div class="visit-km">R$ ' + r.value.toFixed(2) + '</div>' +
+      (r.photo ? '<img src="' + r.photo + '" onclick="viewRefuelPhoto(' + idx + ')" style="margin-top:8px; max-height:80px; border-radius:6px; border:1px solid var(--border-c); cursor:pointer;"> <div style="font-size:11px; color:var(--text-dim); margin-top:2px;">Toque na foto para ampliar</div>' : '') +
       '</div>';
   }).join('');
 }
