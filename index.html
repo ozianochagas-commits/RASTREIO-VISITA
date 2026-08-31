@@ -195,6 +195,12 @@
       <input type="file" id="importFile" accept="application/json" style="display:none" onchange="importBackup(event)">
     </div>
 
+    <div class="filter-group">
+      <h3 style="margin-bottom: 8px;">Recalcular distâncias</h3>
+      <p style="font-size: 12px; color: var(--text-dim); margin-bottom: 12px;">Aplica o fator de correção de estrada atual a todas as visitas já registradas. Use depois de mudar o fator na aba Combustível.</p>
+      <button class="btn-primary full-w" onclick="confirmRecalc()">Recalcular todas as distâncias</button>
+    </div>
+
     <div id="visitsList"></div>
   </div>
 
@@ -295,7 +301,7 @@
   </div>
 
   <div style="text-align:center; color:var(--orange); font-size:12px; margin-top:1.5rem; padding:12px; border:1px dashed var(--orange); border-radius:8px;">
-    ✓ Versão 2.5 — Distância corrigida por estrada (fator 1.35)<br>
+    ✓ Versão 2.6 — Recalcular distâncias antigas<br>
     <span id="loadStamp" style="color:var(--text-dim); font-size:10px;"></span>
   </div>
 </div>
@@ -333,6 +339,38 @@ function migrateOldVisits() {
   }
 }
 migrateOldVisits();
+
+function recalcAllDistances() {
+  const factor = getRoadFactor();
+  let count = 0;
+  state.visits.forEach(function(v) {
+    let straight = null;
+    // 1) Se temos coordenadas de origem e destino, recalcula da fonte (mais preciso)
+    if (v.fromLat != null && v.fromLng != null && v.lat != null && v.lng != null) {
+      straight = haversineStraight(v.fromLat, v.fromLng, v.lat, v.lng);
+    } else if (v.distanceStraight != null) {
+      // 2) Se guardamos a distância em linha reta, usa ela
+      straight = v.distanceStraight;
+    } else if (v.distance != null) {
+      // 3) Visita antiga: a distância salva era linha reta (sem fator). Usa como base.
+      straight = v.distance;
+    }
+    if (straight != null) {
+      v.distanceStraight = straight;
+      v.distance = straight * factor;
+      count++;
+    }
+  });
+  saveState();
+  return count;
+}
+
+function confirmRecalc() {
+  if (!confirm('Isso vai recalcular a distância de TODAS as visitas usando o fator de estrada atual (' + getRoadFactor().toFixed(2) + '). Deseja continuar?')) return;
+  const n = recalcAllDistances();
+  renderVisitsList();
+  showMessage(n + ' visita(s) recalculada(s) com o fator ' + getRoadFactor().toFixed(2) + '.');
+}
 
 function saveState() {
   try {
@@ -388,7 +426,7 @@ function getRoadFactor() {
   return (!isNaN(f) && f > 0) ? f : 1.35;
 }
 
-function haversineDistance(lat1, lon1, lat2, lon2) {
+function haversineStraight(lat1, lon1, lat2, lon2) {
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
@@ -396,7 +434,11 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
     Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c * getRoadFactor();
+  return R * c;
+}
+
+function haversineDistance(lat1, lon1, lat2, lon2) {
+  return haversineStraight(lat1, lon1, lat2, lon2) * getRoadFactor();
 }
 
 function reverseGeocode(lat, lon) {
@@ -688,11 +730,14 @@ function registerVisit() {
   function finish(lat, lng, displayName) {
     const submitTime = new Date();
     const finalName = displayName || locationName;
-    let distance = 0;
+    let distanceStraight = 0;
     let fromLocationName = 'Ponto de partida';
+    let fromLat = null, fromLng = null;
     if (state.lastLocation) {
-      distance = haversineDistance(state.lastLocation.lat, state.lastLocation.lng, lat, lng);
+      distanceStraight = haversineStraight(state.lastLocation.lat, state.lastLocation.lng, lat, lng);
       fromLocationName = state.lastLocation.name;
+      fromLat = state.lastLocation.lat;
+      fromLng = state.lastLocation.lng;
     }
 
     state.visits.push({
@@ -701,7 +746,10 @@ function registerVisit() {
       fromLocationName: fromLocationName,
       lat: lat,
       lng: lng,
-      distance: distance,
+      fromLat: fromLat,
+      fromLng: fromLng,
+      distanceStraight: distanceStraight,
+      distance: distanceStraight * getRoadFactor(),
       notes: notes
     });
 
