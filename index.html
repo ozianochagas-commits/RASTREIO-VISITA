@@ -335,7 +335,7 @@
   </div>
 
   <div style="text-align:center; color:var(--orange); font-size:12px; margin-top:1.5rem; padding:12px; border:1px dashed var(--orange); border-radius:8px;">
-    ✓ Versão 3.4 — Histórico mostra 3 últimas visitas<br>
+    ✓ Versão 3.5 — Período também mostra 3 últimas<br>
     <span id="loadStamp" style="color:var(--text-dim); font-size:10px;"></span>
   </div>
 </div>
@@ -1015,6 +1015,7 @@ function resetChain() {
 }
 
 let showAllVisits = false;
+let showAllPeriod = false;
 
 function renderVisitsList() {
   const visitsList = document.getElementById('visitsList');
@@ -1054,6 +1055,7 @@ function renderVisitsList() {
 }
 
 function renderPeriodView() {
+  showAllPeriod = false;
   const today = new Date().toISOString().slice(0, 10);
   let earliest = today;
   if (state.visits.length > 0) {
@@ -1100,7 +1102,11 @@ function showPeriodVisits() {
     '<div style="font-size:12px;">' + filtered.length + ' visita(s)</div>' +
     '</div>';
 
-  listEl.innerHTML = filtered.map(function(visit) {
+  // Mostra as 3 mais recentes; botão expande para todas
+  const recentFirst = filtered.slice().reverse();
+  const toShow = showAllPeriod ? recentFirst : recentFirst.slice(0, 3);
+
+  function pCard(visit) {
     const d = new Date(visit.dateTime);
     return '<div class="visit-card">' +
       '<div class="visit-date">' + d.toLocaleString('pt-BR') + '</div>' +
@@ -1108,7 +1114,18 @@ function showPeriodVisits() {
       '<div class="visit-km">' + (visit.distance || 0).toFixed(2) + ' km</div>' +
       (visit.notes ? '<div class="visit-note">📝 ' + visit.notes + '</div>' : '') +
       '</div>';
-  }).join('');
+  }
+
+  let html = toShow.map(pCard).join('');
+  if (filtered.length > 3) {
+    if (showAllPeriod) {
+      html += '<button class="full-w" onclick="showAllPeriod=false;showPeriodVisits();" style="margin-top:4px;">Mostrar menos (só as 3 últimas)</button>';
+    } else {
+      html += '<button class="full-w" onclick="showAllPeriod=true;showPeriodVisits();" style="margin-top:4px;">Ver todas as ' + filtered.length + ' visitas do período</button>';
+    }
+  }
+  html += '<p class="hint" style="text-align:center; margin-top:8px;">O PDF sempre inclui todas as ' + filtered.length + ' visitas do período, mesmo mostrando só as 3 aqui.</p>';
+  listEl.innerHTML = html;
 }
 
 function deleteVisit(idx) {
