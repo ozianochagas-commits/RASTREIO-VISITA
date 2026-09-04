@@ -172,7 +172,6 @@
   <div class="tabs">
     <button class="tab-btn active" onclick="switchTab('registro')">Registrar</button>
     <button class="tab-btn" onclick="switchTab('historico')">Histórico</button>
-    <button class="tab-btn" onclick="switchTab('relatorio')">Relatório</button>
     <button class="tab-btn" onclick="switchTab('periodo')">Período</button>
     <button class="tab-btn" onclick="switchTab('combustivel')">Combustível</button>
   </div>
@@ -243,18 +242,6 @@
     </div>
 
     <div id="visitsList"></div>
-  </div>
-
-  <div id="relatorio" class="tab-content">
-    <div class="summary">
-      <div style="font-size:13px;">Quilometragem selecionada</div>
-      <div class="summary-value" id="totalKm">0 km</div>
-      <div style="font-size:12px;"><span id="selectedCount">0</span> visitas selecionadas</div>
-    </div>
-    <button class="btn-export full-w" onclick="exportPDF()">Exportar selecionadas em PDF</button>
-    <button class="full-w" onclick="selectAllForReport()">Selecionar tudo</button>
-    <button class="btn-danger full-w" onclick="deselectAllForReport()">Desselecionar tudo</button>
-    <div id="reportList"></div>
   </div>
 
   <div id="periodo" class="tab-content">
@@ -348,7 +335,7 @@
   </div>
 
   <div style="text-align:center; color:var(--orange); font-size:12px; margin-top:1.5rem; padding:12px; border:1px dashed var(--orange); border-radius:8px;">
-    ✓ Versão 3.2 — Tecla Enter + recuperar senha<br>
+    ✓ Versão 3.4 — Histórico mostra 3 últimas visitas<br>
     <span id="loadStamp" style="color:var(--text-dim); font-size:10px;"></span>
   </div>
 </div>
@@ -619,7 +606,6 @@ function switchTab(tab) {
   document.getElementById(tab).classList.add('active');
   document.querySelector('[onclick="switchTab(\'' + tab + '\')"]').classList.add('active');
   if (tab === 'historico') renderVisitsList();
-  if (tab === 'relatorio') renderReportList();
   if (tab === 'periodo') renderPeriodView();
   if (tab === 'combustivel') renderFuelView();
   if (tab === 'registro') updateLastLocationLabel();
@@ -1028,6 +1014,8 @@ function resetChain() {
   }
 }
 
+let showAllVisits = false;
+
 function renderVisitsList() {
   const visitsList = document.getElementById('visitsList');
   if (state.visits.length === 0) {
@@ -1035,7 +1023,9 @@ function renderVisitsList() {
     return;
   }
   const sorted = state.visits.slice().sort(function(a, b) { return new Date(b.dateTime) - new Date(a.dateTime); });
-  visitsList.innerHTML = sorted.map(function(visit) {
+  const toShow = showAllVisits ? sorted : sorted.slice(0, 3);
+
+  function cardHtml(visit) {
     const idx = state.visits.indexOf(visit);
     const d = new Date(visit.dateTime);
     return '<div class="visit-card">' +
@@ -1049,38 +1039,18 @@ function renderVisitsList() {
       '<div class="visit-km">' + (visit.distance || 0).toFixed(2) + ' km</div>' +
       (visit.notes ? '<div class="visit-note">📝 ' + visit.notes + '</div>' : '') +
       '</div>';
-  }).join('');
-}
-
-let reportEverOpened = false;
-
-function renderReportList() {
-  const reportList = document.getElementById('reportList');
-  if (state.visits.length === 0) {
-    reportList.innerHTML = '<div class="empty-state">Nenhuma visita para selecionar.</div>';
-    updateSummary();
-    return;
   }
 
-  if (!reportEverOpened) {
-    reportEverOpened = true;
-    state.selectedVisits = new Set(state.visits.map(function(_, i) { return i; }));
-  }
+  let html = toShow.map(cardHtml).join('');
 
-  reportList.innerHTML = state.visits.map(function(visit, idx) {
-    const d = new Date(visit.dateTime);
-    const isSelected = state.selectedVisits.has(idx);
-    return '<div class="visit-card" style="cursor:pointer;" onclick="toggleSelect(' + idx + ')">' +
-      '<div class="visit-header">' +
-      '<input type="checkbox" class="checkbox" ' + (isSelected ? 'checked' : '') + ' readonly>' +
-      '<div style="flex:1;">' +
-      '<div class="visit-date">' + d.toLocaleString('pt-BR') + '</div>' +
-      '<div class="visit-location" style="margin:2px 0;">' + visit.fromLocationName + ' \u2192 ' + visit.locationName + '</div>' +
-      '<div class="visit-km">' + (visit.distance || 0).toFixed(2) + ' km</div>' +
-      (visit.notes ? '<div class="visit-note">📝 ' + visit.notes + '</div>' : '') +
-      '</div></div></div>';
-  }).join('');
-  updateSummary();
+  if (sorted.length > 3) {
+    if (showAllVisits) {
+      html += '<button class="full-w" onclick="showAllVisits=false;renderVisitsList();" style="margin-top:4px;">Mostrar menos (só as 3 últimas)</button>';
+    } else {
+      html += '<button class="full-w" onclick="showAllVisits=true;renderVisitsList();" style="margin-top:4px;">Ver todas as ' + sorted.length + ' visitas</button>';
+    }
+  }
+  visitsList.innerHTML = html;
 }
 
 function renderPeriodView() {
@@ -1141,30 +1111,6 @@ function showPeriodVisits() {
   }).join('');
 }
 
-function toggleSelect(idx) {
-  if (state.selectedVisits.has(idx)) state.selectedVisits.delete(idx);
-  else state.selectedVisits.add(idx);
-  renderReportList();
-}
-
-function selectAllForReport() {
-  state.selectedVisits = new Set(state.visits.map(function(_, i) { return i; }));
-  renderReportList();
-}
-
-function deselectAllForReport() {
-  state.selectedVisits.clear();
-  renderReportList();
-}
-
-function updateSummary() {
-  const total = Array.from(state.selectedVisits).reduce(function(sum, idx) {
-    return sum + (state.visits[idx] ? state.visits[idx].distance : 0);
-  }, 0);
-  document.getElementById('totalKm').textContent = total.toFixed(2) + ' km';
-  document.getElementById('selectedCount').textContent = state.selectedVisits.size;
-}
-
 function deleteVisit(idx) {
   if (confirm('Deseja deletar esta visita? Isso não recalcula automaticamente a km das visitas seguintes.')) {
     const removed = state.visits[idx];
@@ -1209,17 +1155,6 @@ function timeStamp() {
   const d = new Date();
   function p(n) { return (n < 10 ? '0' : '') + n; }
   return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '_' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
-}
-
-function exportPDF() {
-  if (state.selectedVisits.size === 0) {
-    showMessage('Selecione pelo menos uma visita para exportar.', 'error');
-    return;
-  }
-  const visits = Array.from(state.selectedVisits)
-    .map(function(i) { return state.visits[i]; })
-    .sort(function(a, b) { return new Date(a.dateTime) - new Date(b.dateTime); });
-  buildPdf(visits, 'Relatório de Visitas', 'Visitas_' + timeStamp() + '.pdf');
 }
 
 function generatePeriodPDF() {
