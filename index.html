@@ -60,6 +60,7 @@
   .visit-date { font-weight: 600; font-size: 14px; margin-bottom: 4px; color: var(--text); }
   .visit-location { font-size: 13px; color: var(--text-dim); margin-bottom: 4px; }
   .visit-km { font-size: 16px; font-weight: 600; color: var(--orange); margin-bottom: 4px; }
+  .visit-note { font-size: 13px; color: var(--text); margin-top: 8px; padding: 8px 10px; background: rgba(254,80,0,0.08); border-left: 3px solid var(--orange); border-radius: 4px; line-height: 1.4; }
   .trash-btn { background: transparent; border: none; padding: 6px; min-height: auto; color: var(--text-dim); cursor: pointer; flex-shrink: 0; border-radius: 6px; }
   .trash-btn:hover { color: #ff6b6b; background: #2e1a1a; }
   .trash-btn:active { transform: scale(0.92); }
@@ -114,15 +115,18 @@
 
     <div class="form-group">
       <label>E-mail</label>
-      <input type="email" id="loginEmail" placeholder="seu@email.com" autocomplete="username">
+      <input type="email" id="loginEmail" placeholder="seu@email.com" autocomplete="username" onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('loginPassword').focus();}">
     </div>
     <div class="form-group">
       <label>Senha</label>
-      <input type="password" id="loginPassword" placeholder="Mínimo 6 caracteres" autocomplete="current-password">
+      <input type="password" id="loginPassword" placeholder="Mínimo 6 caracteres" autocomplete="current-password" onkeydown="if(event.key==='Enter'){event.preventDefault();doLogin();}">
     </div>
     <button class="btn-primary full-w" onclick="doLogin()">Entrar</button>
     <button class="full-w" onclick="doSignup()">Criar conta nova</button>
-    <p class="hint" style="text-align:center; margin-top:12px;">Na primeira vez, toque em "Criar conta nova". Depois, use "Entrar".</p>
+    <p style="text-align:center; margin-top:10px;">
+      <span onclick="doResetPassword()" style="color:var(--orange); font-size:13px; cursor:pointer; text-decoration:underline;">Esqueci minha senha</span>
+    </p>
+    <p class="hint" style="text-align:center; margin-top:8px;">Na primeira vez, toque em "Criar conta nova". Depois, use "Entrar".</p>
     <div id="loginMsg"></div>
   </div>
 </div>
@@ -344,7 +348,7 @@
   </div>
 
   <div style="text-align:center; color:var(--orange); font-size:12px; margin-top:1.5rem; padding:12px; border:1px dashed var(--orange); border-radius:8px;">
-    ✓ Versão 3.0 — Banco de dados na nuvem + login<br>
+    ✓ Versão 3.2 — Tecla Enter + recuperar senha<br>
     <span id="loadStamp" style="color:var(--text-dim); font-size:10px;"></span>
   </div>
 </div>
@@ -386,6 +390,15 @@ async function doLogin() {
   const { data, error } = await sb.auth.signInWithPassword({ email: email, password: password });
   if (error) { loginMsg('Erro: ' + error.message); return; }
   onLoggedIn(data.user);
+}
+
+async function doResetPassword() {
+  const email = document.getElementById('loginEmail').value.trim();
+  if (!email) { loginMsg('Digite seu e-mail no campo acima e toque em "Esqueci minha senha".'); return; }
+  loginMsg('Enviando e-mail de recuperação...', 'success');
+  const { error } = await sb.auth.resetPasswordForEmail(email);
+  if (error) { loginMsg('Erro: ' + error.message); return; }
+  loginMsg('E-mail enviado! Verifique sua caixa de entrada (e o spam) para redefinir a senha.', 'success');
 }
 
 async function doLogout() {
@@ -1034,7 +1047,7 @@ function renderVisitsList() {
       '</div>' +
       '<div class="visit-location">' + visit.fromLocationName + ' \u2192 <strong>' + visit.locationName + '</strong></div>' +
       '<div class="visit-km">' + (visit.distance || 0).toFixed(2) + ' km</div>' +
-      (visit.notes ? '<div style="font-size:11px;color:#888;margin-top:4px;">' + visit.notes + '</div>' : '') +
+      (visit.notes ? '<div class="visit-note">📝 ' + visit.notes + '</div>' : '') +
       '</div>';
   }).join('');
 }
@@ -1064,6 +1077,7 @@ function renderReportList() {
       '<div class="visit-date">' + d.toLocaleString('pt-BR') + '</div>' +
       '<div class="visit-location" style="margin:2px 0;">' + visit.fromLocationName + ' \u2192 ' + visit.locationName + '</div>' +
       '<div class="visit-km">' + (visit.distance || 0).toFixed(2) + ' km</div>' +
+      (visit.notes ? '<div class="visit-note">📝 ' + visit.notes + '</div>' : '') +
       '</div></div></div>';
   }).join('');
   updateSummary();
@@ -1122,6 +1136,7 @@ function showPeriodVisits() {
       '<div class="visit-date">' + d.toLocaleString('pt-BR') + '</div>' +
       '<div class="visit-location">' + visit.fromLocationName + ' \u2192 <strong>' + visit.locationName + '</strong></div>' +
       '<div class="visit-km">' + (visit.distance || 0).toFixed(2) + ' km</div>' +
+      (visit.notes ? '<div class="visit-note">📝 ' + visit.notes + '</div>' : '') +
       '</div>';
   }).join('');
 }
@@ -1185,6 +1200,7 @@ function applyFilter() {
       '<div class="visit-date">' + d.toLocaleString('pt-BR') + '</div>' +
       '<div class="visit-location">' + visit.fromLocationName + ' \u2192 <strong>' + visit.locationName + '</strong></div>' +
       '<div class="visit-km">' + (visit.distance || 0).toFixed(2) + ' km</div>' +
+      (visit.notes ? '<div class="visit-note">📝 ' + visit.notes + '</div>' : '') +
       '</div>';
   }).join('');
 }
@@ -1273,7 +1289,9 @@ function buildPdf(visits, title, filename, periodLine) {
 
   let totalKm = 0;
   visits.forEach(function(visit, idx) {
-    const localLines = doc.splitTextToSize(visit.locationName || 'Local desconhecido', localMaxWidth);
+    let localText = visit.locationName || 'Local desconhecido';
+    if (visit.notes) localText += '\nObs: ' + visit.notes;
+    const localLines = doc.splitTextToSize(localText, localMaxWidth);
     const rowHeight = Math.max(6, localLines.length * 4.5);
 
     if (y + rowHeight > pageHeight - 28) {
@@ -1791,6 +1809,24 @@ function formatLocalDateTimeInput(d) {
   document.getElementById('addressModal').addEventListener('click', function(e) {
     if (e.target === this) closeAddressSearch();
   });
+
+  // Enter dispara a ação principal de cada formulário
+  function enterKey(id, fn) {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') { e.preventDefault(); fn(); }
+    });
+  }
+  // Busca de endereço: Enter roda a busca
+  enterKey('addressSearchInput', runAddressSearch);
+  enterKey('manualLocationInput', useManualLocation);
+  // Abastecimento: Enter em qualquer campo adiciona
+  enterKey('refuelValue', addRefuel);
+  enterKey('refuelLiters', addRefuel);
+  enterKey('refuelStation', addRefuel);
+  // Combustível: Enter salva config
+  enterKey('fuelPrice', saveFuelConfig);
+  enterKey('fuelKmL', saveFuelConfig);
 
   updateLastLocationLabel();
 
