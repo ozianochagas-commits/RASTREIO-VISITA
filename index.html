@@ -339,7 +339,7 @@
   <div id="linha" class="tab-content">
     <div class="filter-group">
       <h3>Relatório: onde fui</h3>
-      <p style="font-size: 12px; color: var(--text-dim); margin-bottom: 12px;">Cruza as visitas registradas com os abastecimentos do mesmo período, dia a dia.</p>
+      <p style="font-size: 12px; color: var(--text-dim); margin-bottom: 12px;">Cruza as visitas registradas com os abastecimentos do mesmo período, dia a dia — incluindo a foto do comprovante quando tiver.</p>
       <div class="grid2">
         <div class="form-group" style="margin-bottom: 0;">
           <label>Data inicial</label>
@@ -358,7 +358,7 @@
   </div>
 
   <div style="text-align:center; color:var(--orange); font-size:12px; margin-top:1.5rem; padding:12px; border:1px dashed var(--orange); border-radius:8px;">
-    ✓ Versão 4.0 — Relatório onde fui<br>
+    ✓ Versão 4.1 — Comprovante no relatório<br>
     <span id="loadStamp" style="color:var(--text-dim); font-size:10px;"></span>
   </div>
 </div>
@@ -1842,7 +1842,9 @@ function renderTimelineReport() {
       : '<div class="visit-location" style="font-size:11px; color:var(--text-dim);">Nenhuma visita registrada nesse dia</div>';
 
     const refuelHtml = day.refuels.map(function(r) {
-      return '<div class="visit-location" style="color:var(--orange);">⛽ ' + (r.station || 'Abastecimento') + ' — R$ ' + r.value.toFixed(2) + ' (' + r.liters.toFixed(2) + ' L)</div>';
+      const idx = state.refuels.indexOf(r);
+      return '<div class="visit-location" style="color:var(--orange);">⛽ ' + (r.station || 'Abastecimento') + ' — R$ ' + r.value.toFixed(2) + ' (' + r.liters.toFixed(2) + ' L)</div>' +
+        (r.photo ? '<img src="' + r.photo + '" onclick="viewRefuelPhoto(' + idx + ')" style="margin-top:6px; max-height:80px; border-radius:6px; border:1px solid var(--border-c); cursor:pointer;"> <div style="font-size:11px; color:var(--text-dim); margin-top:2px;">Comprovante — toque para ampliar</div>' : '');
     }).join('');
 
     return '<div class="visit-card">' +
