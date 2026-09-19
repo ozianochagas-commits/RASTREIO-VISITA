@@ -261,6 +261,7 @@
       <button class="full-w" onclick="showPeriodVisits()">Ver visitas do período</button>
       <button class="full-w" onclick="renderPeriodView()">Atualizar (incluir visitas novas)</button>
       <button class="btn-export full-w" onclick="generatePeriodPDF()">Exportar período em PDF</button>
+      <button class="btn-export full-w" onclick="generatePeriodExcel()">Exportar período em Excel</button>
     </div>
     <div id="periodSummary"></div>
     <div id="periodList"></div>
@@ -371,7 +372,7 @@
   </div>
 
   <div style="text-align:center; color:var(--orange); font-size:12px; margin-top:1.5rem; padding:12px; border:1px dashed var(--orange); border-radius:8px;">
-    ✓ Versão 3.8 — Linha do tempo x combustível<br>
+    ✓ Versão 3.9 — Exportação em Excel<br>
     <span id="loadStamp" style="color:var(--text-dim); font-size:10px;"></span>
   </div>
 </div>
@@ -1212,6 +1213,61 @@ function timeStamp() {
   const d = new Date();
   function p(n) { return (n < 10 ? '0' : '') + n; }
   return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '_' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+}
+
+function downloadCsv(rows, filename) {
+  function csvEscape(v) {
+    const s = String(v == null ? '' : v);
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  const csv = rows.map(function(r) { return r.map(csvEscape).join(';'); }).join('\r\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function generatePeriodExcel() {
+  const from = document.getElementById('periodFrom').value;
+  const to = document.getElementById('periodTo').value;
+  if (!from || !to) {
+    showMessage('Preencha as datas inicial e final.', 'error');
+    return;
+  }
+  const filtered = state.visits.filter(function(v) {
+    const d = v.dateTime.slice(0, 10);
+    return d >= from && d <= to;
+  }).sort(function(a, b) { return new Date(a.dateTime) - new Date(b.dateTime); });
+
+  if (filtered.length === 0) {
+    showMessage('Nenhuma visita neste período.', 'error');
+    return;
+  }
+
+  const rows = [['Data', 'Hora', 'Origem', 'Destino', 'Km', 'Observações']];
+  let totalKm = 0;
+  filtered.forEach(function(v) {
+    const d = new Date(v.dateTime);
+    totalKm += (v.distance || 0);
+    rows.push([
+      d.toLocaleDateString('pt-BR'),
+      d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      v.fromLocationName || '',
+      v.locationName || '',
+      (v.distance || 0).toFixed(2).replace('.', ','),
+      v.notes || ''
+    ]);
+  });
+  rows.push([]);
+  rows.push(['Total', '', '', '', totalKm.toFixed(2).replace('.', ','), filtered.length + ' visita(s)']);
+
+  downloadCsv(rows, 'Relatorio_Visitas_' + from + '_ate_' + to + '_' + timeStamp() + '.csv');
+  showMessage('Excel exportado! Abra o arquivo .csv no Excel, Google Sheets ou similar.');
 }
 
 function generatePeriodPDF() {
