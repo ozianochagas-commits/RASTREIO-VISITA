@@ -2051,13 +2051,30 @@ function getRefuelPeriodData(from, to) {
 // Compara o total abastecido no período com o que o consumo configurado
 // exigiria para rodar o total de km do período (não é por dia, já que
 // combustível comprado num dia cobre viagens de outros dias também).
-function getInsufficientFuelWarning(totalKm, refuelData) {
+// Sempre retorna um veredito (validado ou não), não só quando dá errado.
+// Aplica uma margem de tolerância porque consumo real varia (trânsito,
+// ar-condicionado, ida "no tanque" etc.) — não é uma conta exata.
+const FUEL_VALIDATION_TOLERANCE = 0.15; // 15%
+
+function getFuelValidationStatus(totalKm, refuelData) {
   if (!state.fuel.kml || totalKm <= 0) return null;
   const litrosNecessarios = totalKm / state.fuel.kml;
-  if (refuelData.totalLiters >= litrosNecessarios) return null;
+  const limiteComTolerancia = litrosNecessarios * (1 - FUEL_VALIDATION_TOLERANCE);
+  if (refuelData.totalLiters >= limiteComTolerancia) {
+    return {
+      ok: true,
+      message: 'Km x abastecido: validado — rodou ' + totalKm.toFixed(2) + ' km (~' + litrosNecessarios.toFixed(2) +
+        ' L necessários) e abasteceu ' + refuelData.totalLiters.toFixed(2) + ' L no período (margem de tolerância de ' +
+        (FUEL_VALIDATION_TOLERANCE * 100).toFixed(0) + '%).'
+    };
+  }
   const faltam = litrosNecessarios - refuelData.totalLiters;
-  return 'Abastecimento insuficiente: rodou ' + totalKm.toFixed(2) + ' km (precisaria de ~' + litrosNecessarios.toFixed(2) +
-    ' L) mas abasteceu só ' + refuelData.totalLiters.toFixed(2) + ' L no período (faltam ~' + faltam.toFixed(2) + ' L).';
+  return {
+    ok: false,
+    message: 'Km x abastecido: não validado — rodou ' + totalKm.toFixed(2) + ' km (precisaria de ~' + litrosNecessarios.toFixed(2) +
+      ' L, já considerando ' + (FUEL_VALIDATION_TOLERANCE * 100).toFixed(0) + '% de tolerância) mas abasteceu só ' +
+      refuelData.totalLiters.toFixed(2) + ' L no período (faltam ~' + faltam.toFixed(2) + ' L).'
+  };
 }
 
 // ===== RELATÓRIO: ONDE FUI (visitas x abastecimento no período) =====
@@ -2121,8 +2138,14 @@ function renderTimelineReport() {
     return sum + byDate[d].visits.reduce(function(s, v) { return s + (v.distance || 0); }, 0);
   }, 0);
   const refuelInPeriod = getRefuelPeriodData(from, to);
-  const fuelWarning = getInsufficientFuelWarning(totalKm, refuelInPeriod);
-  summaryBox.innerHTML = '<div class="summary">' +
+  const fuelStatus = getFuelValidationStatus(totalKm, refuelInPeriod);
+  summaryBox.innerHTML =
+    (fuelStatus
+      ? '<div class="visit-card" style="border-color:' + (fuelStatus.ok ? 'var(--green, #2ecc71)' : 'var(--orange)') + '; margin-bottom:12px;">' +
+        '<div class="visit-location" style="color:' + (fuelStatus.ok ? 'var(--green, #2ecc71)' : 'var(--orange)') + '; font-weight:600;">' +
+        (fuelStatus.ok ? '✅ ' : '⚠️ ') + fuelStatus.message + '</div></div>'
+      : '') +
+    '<div class="summary">' +
     '<div style="font-size:13px;">Período analisado</div>' +
     '<div class="summary-value">' + dates.length + ' dia(s)</div>' +
     '<div style="font-size:12px;">' + totalKm.toFixed(2) + ' km rodados · ' + refuelInPeriod.count + ' abastecimento(s) · R$ ' + refuelInPeriod.totalValue.toFixed(2) + '</div>' +
@@ -2132,9 +2155,6 @@ function renderTimelineReport() {
         '<p style="font-size:12px; color:var(--text-dim); margin-bottom:8px;">Nenhum abastecimento nesse período. A nota fiscal/comprovante é anexada ao registrar o abastecimento, na aba Combustível.</p>' +
         '<button class="btn-primary full-w" onclick="switchTab(\'combustivel\')">Registrar abastecimento agora</button>' +
         '</div>'
-      : '') +
-    (fuelWarning
-      ? '<div class="visit-card" style="border-color:var(--orange); margin-top:12px;"><div class="visit-location" style="color:var(--orange); font-weight:600;">⚠️ ' + fuelWarning + '</div></div>'
       : '');
 
   const datesRecentFirst = dates.slice().reverse();
@@ -2210,14 +2230,14 @@ function generateTimelinePDF() {
     return sum + byDate[d].visits.reduce(function(s, v) { return s + (v.distance || 0); }, 0);
   }, 0);
   const refuelInPeriod = getRefuelPeriodData(from, to);
-  const fuelWarning = getInsufficientFuelWarning(totalKmPeriod, refuelInPeriod);
-  if (fuelWarning) {
+  const fuelStatus = getFuelValidationStatus(totalKmPeriod, refuelInPeriod);
+  if (fuelStatus) {
     doc.setFontSize(10);
     doc.setFont(undefined, 'bold');
-    doc.setTextColor(200, 100, 0);
-    const warnLines = doc.splitTextToSize('⚠ ' + fuelWarning, pageWidth - 40);
-    doc.text(warnLines, 20, y);
-    y += warnLines.length * 5 + 3;
+    if (fuelStatus.ok) doc.setTextColor(0, 140, 60); else doc.setTextColor(200, 100, 0);
+    const statusLines = doc.splitTextToSize((fuelStatus.ok ? '✔ ' : '⚠ ') + fuelStatus.message, pageWidth - 40);
+    doc.text(statusLines, 20, y);
+    y += statusLines.length * 5 + 3;
     doc.setTextColor(0, 0, 0);
     doc.setFont(undefined, 'normal');
   }
@@ -2289,8 +2309,8 @@ function generateTimelineExcel() {
     return sum + byDate[d].visits.reduce(function(s, v) { return s + (v.distance || 0); }, 0);
   }, 0);
   const refuelInPeriod = getRefuelPeriodData(from, to);
-  const fuelWarning = getInsufficientFuelWarning(totalKmPeriod, refuelInPeriod);
-  if (fuelWarning) rows.push(['', '', '⚠ ' + fuelWarning, '', '', '', '', '']);
+  const fuelStatus = getFuelValidationStatus(totalKmPeriod, refuelInPeriod);
+  if (fuelStatus) rows.push(['', '', (fuelStatus.ok ? '✔ ' : '⚠ ') + fuelStatus.message, '', '', '', '', '']);
 
   dates.forEach(function(d) {
     const day = byDate[d];
