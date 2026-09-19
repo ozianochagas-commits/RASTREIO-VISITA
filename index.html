@@ -1709,19 +1709,41 @@ function parseReceiptText(text) {
   return genericParseReceipt(text);
 }
 
-function runReceiptOCR(dataUrl) {
+let ocrWorkerPromise = null;
+
+// Reaproveita o mesmo worker entre leituras (evita rebaixar os dados do idioma a cada foto).
+function getOcrWorker() {
+  if (!ocrWorkerPromise) {
+    ocrWorkerPromise = Tesseract.createWorker('por').catch(function(err) {
+      ocrWorkerPromise = null;
+      throw err;
+    });
+  }
+  return ocrWorkerPromise;
+}
+
+async function runReceiptOCR(dataUrl) {
   const preview = document.getElementById('refuelPhotoPreview');
-  if (typeof Tesseract === 'undefined') return;
+  if (typeof Tesseract === 'undefined') {
+    const warn = document.createElement('div');
+    warn.className = 'suggestion-loading';
+    warn.style.marginTop = '6px';
+    warn.textContent = 'Leitura automática indisponível (sem conexão). Preencha manualmente.';
+    preview.appendChild(warn);
+    return;
+  }
   const status = document.createElement('div');
   status.className = 'suggestion-loading';
   status.style.marginTop = '6px';
   status.textContent = 'Lendo dados do cupom...';
   preview.appendChild(status);
 
-  Tesseract.recognize(dataUrl, 'por').then(function(result) {
-    const text = result.data.text || '';
+  try {
+    const worker = await getOcrWorker();
+    const result = await worker.recognize(dataUrl);
+    const text = (result.data && result.data.text) || '';
     const data = parseReceiptText(text);
-    let found = [];
+    const found = [];
     if (data.date) { document.getElementById('refuelDate').value = data.date; found.push('data'); }
     if (data.value) { document.getElementById('refuelValue').value = data.value.toFixed(2); found.push('valor'); }
     if (data.liters) { document.getElementById('refuelLiters').value = data.liters.toFixed(2); found.push('litros'); }
@@ -1732,9 +1754,9 @@ function runReceiptOCR(dataUrl) {
     status.textContent = found.length
       ? 'Identificado no cupom: ' + found.join(', ') + '. Confira antes de salvar.'
       : 'Não consegui identificar os dados do cupom. Preencha manualmente.';
-  }).catch(function() {
+  } catch (err) {
     status.textContent = 'Não foi possível ler o cupom automaticamente. Preencha manualmente.';
-  });
+  }
 }
 
 function onRefuelPhotoSelected(event) {
