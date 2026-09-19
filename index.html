@@ -500,9 +500,15 @@ async function cloudSaveVisit(v) {
   return data.id;
 }
 
-async function cloudDeleteVisit(id) {
-  if (!currentUser || !id) return;
-  await sb.from('visitas').delete().eq('id', id);
+async function cloudDeleteVisit(id, dateTime, locationName) {
+  if (!currentUser) return;
+  if (id) {
+    await sb.from('visitas').delete().eq('id', id);
+  } else if (dateTime && locationName) {
+    // A visita pode ter sido excluída antes do id da nuvem voltar (corrida entre
+    // salvar e excluir logo em seguida); remove pelo conteúdo pra não ficar órfã.
+    await sb.from('visitas').delete().eq('user_id', currentUser.id).eq('data_hora', dateTime).eq('local_nome', locationName);
+  }
 }
 
 async function cloudSaveRefuel(r) {
@@ -516,9 +522,15 @@ async function cloudSaveRefuel(r) {
   return data.id;
 }
 
-async function cloudDeleteRefuel(id) {
-  if (!currentUser || !id) return;
-  await sb.from('abastecimentos').delete().eq('id', id);
+async function cloudDeleteRefuel(id, date, value, liters) {
+  if (!currentUser) return;
+  if (id) {
+    await sb.from('abastecimentos').delete().eq('id', id);
+  } else if (date != null && value != null && liters != null) {
+    // Mesma corrida do cloudDeleteVisit: exclusão pode ter ocorrido antes do
+    // id da nuvem voltar. Remove pelo conteúdo pra não deixar órfão.
+    await sb.from('abastecimentos').delete().eq('user_id', currentUser.id).eq('data', date).eq('valor', value).eq('litros', liters);
+  }
 }
 
 async function cloudUpdateRefuel(id, r) {
@@ -1188,7 +1200,7 @@ function deleteVisit(idx) {
     state.selectedVisits.delete(idx);
     saveState();
     renderVisitsList();
-    if (removed && removed.id) cloudDeleteVisit(removed.id);
+    if (removed) cloudDeleteVisit(removed.id, removed.dateTime, removed.locationName);
     showMessage('Visita deletada.');
   }
 }
@@ -2019,7 +2031,7 @@ function deleteRefuel(idx) {
     saveRefuels();
     renderRefuelList();
     calcFuel();
-    if (removed && removed.id) cloudDeleteRefuel(removed.id);
+    if (removed) cloudDeleteRefuel(removed.id, removed.date, removed.value, removed.liters);
     showMessage('Abastecimento excluído.');
   }
 }
@@ -2517,10 +2529,7 @@ function importVisitsFromCsv(event) {
         const km = parseFloat(kmStr.replace(',', '.')) || 0;
         const newVisit = { dateTime: d.toISOString(), locationName: local, distance: km, notes: 'Importado via planilha' };
         const key = newVisit.dateTime + newVisit.locationName;
-        if (existingKeys.has(key)) {
-          const manter = confirm('Já existe uma visita em "' + local + '" com essa mesma data/hora (' + d.toLocaleString('pt-BR') + '). Importar mesmo assim (duplicar)?');
-          if (!manter) { duplicated++; continue; }
-        }
+        if (existingKeys.has(key)) { duplicated++; continue; }
 
         state.visits.push(newVisit);
         existingKeys.add(key);
