@@ -174,6 +174,7 @@
     <button class="tab-btn" onclick="switchTab('historico')">Histórico</button>
     <button class="tab-btn" onclick="switchTab('periodo')">Período</button>
     <button class="tab-btn" onclick="switchTab('combustivel')">Combustível</button>
+    <button class="tab-btn" onclick="switchTab('linha')">Linha do tempo</button>
   </div>
 
   <div id="registro" class="tab-content active">
@@ -334,8 +335,43 @@
     <div id="refuelList"></div>
   </div>
 
+  <div id="linha" class="tab-content">
+    <div class="filter-group">
+      <h3>Importar Linha do Tempo do Google</h3>
+      <p style="font-size: 12px; color: var(--text-dim); margin-bottom: 12px;">
+        O Google não permite que nenhum app externo (nem este) leia sua Linha do Tempo direto da sua conta — só o próprio Google Maps mostra isso. Mas dá para exportar o arquivo e importar aqui:<br><br>
+        <strong>No celular:</strong> Google Maps → foto de perfil → "Seus dados no Maps" → "Linha do tempo" → menu ⋮ → "Exportar dados da Linha do Tempo". Isso gera um arquivo .json.<br>
+        <strong>Ou pelo Google Takeout</strong> (takeout.google.com): selecione "Histórico de localização (Linha do Tempo)" e baixe o .json.<br><br>
+        O arquivo fica só neste navegador — não é enviado para nenhum servidor.
+      </p>
+      <input type="file" id="timelineFile" accept="application/json" style="display:none" onchange="importGoogleTimeline(event)">
+      <button class="btn-primary full-w" onclick="document.getElementById('timelineFile').click()">📍 Importar arquivo da Linha do Tempo</button>
+      <div id="timelineImportStatus" style="margin-top:8px; font-size:12px; color:var(--text-dim);"></div>
+      <button class="full-w" style="margin-top:8px;" onclick="clearTimelineData()">Limpar dados importados</button>
+    </div>
+
+    <div class="filter-group">
+      <h3>Relatório: locais x abastecimento</h3>
+      <div class="grid2">
+        <div class="form-group" style="margin-bottom: 0;">
+          <label>De:</label>
+          <input type="date" id="timelineFrom" onchange="renderTimelineReport()">
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
+          <label>Até:</label>
+          <input type="date" id="timelineTo" onchange="renderTimelineReport()">
+        </div>
+      </div>
+      <button class="full-w" onclick="renderTimelineReport()">Gerar relatório</button>
+      <button class="btn-export full-w" onclick="exportTimelinePDF()">Exportar relatório em PDF</button>
+    </div>
+
+    <div id="timelineSummary"></div>
+    <div id="timelineList"></div>
+  </div>
+
   <div style="text-align:center; color:var(--orange); font-size:12px; margin-top:1.5rem; padding:12px; border:1px dashed var(--orange); border-radius:8px;">
-    ✓ Versão 3.7 — Abas normais restauradas<br>
+    ✓ Versão 3.8 — Linha do tempo x combustível<br>
     <span id="loadStamp" style="color:var(--text-dim); font-size:10px;"></span>
   </div>
 </div>
@@ -504,6 +540,8 @@ const state = {
   lastLocation: JSON.parse(localStorage.getItem('lastLocation') || 'null'),
   fuel: JSON.parse(localStorage.getItem('fuelConfig') || '{"price":null,"kml":null}'),
   refuels: JSON.parse(localStorage.getItem('refuels') || '[]'),
+  timeline: JSON.parse(localStorage.getItem('googleTimeline') || '[]'),
+  geocodeCache: JSON.parse(localStorage.getItem('geocodeCache') || '{}'),
   selectedVisits: new Set()
 };
 
@@ -609,6 +647,7 @@ function switchTab(tab) {
   if (tab === 'historico') renderVisitsList();
   if (tab === 'periodo') renderPeriodView();
   if (tab === 'combustivel') renderFuelView();
+  if (tab === 'linha') renderTimelineReport();
   if (tab === 'registro') updateLastLocationLabel();
 }
 
@@ -1679,6 +1718,308 @@ function getRefuelPeriodData(from, to) {
   const totalValue = filtered.reduce(function(s, r) { return s + r.value; }, 0);
   const totalLiters = filtered.reduce(function(s, r) { return s + r.liters; }, 0);
   return { list: filtered, count: filtered.length, totalValue: totalValue, totalLiters: totalLiters };
+}
+
+// ===== LINHA DO TEMPO DO GOOGLE (importada via arquivo) =====
+
+function saveTimelineData() {
+  try { localStorage.setItem('googleTimeline', JSON.stringify(state.timeline)); } catch (e) {}
+}
+
+function saveGeocodeCache() {
+  try { localStorage.setItem('geocodeCache', JSON.stringify(state.geocodeCache)); } catch (e) {}
+}
+
+function parseLatLngString(s) {
+  if (!s) return null;
+  const parts = String(s).replace(/°/g, '').split(',');
+  if (parts.length !== 2) return null;
+  const lat = parseFloat(parts[0]);
+  const lng = parseFloat(parts[1]);
+  if (isNaN(lat) || isNaN(lng)) return null;
+  return { lat: lat, lng: lng };
+}
+
+function extractTimelineEntries(json) {
+  const entries = [];
+  if (!json || typeof json !== 'object') return entries;
+
+  if (Array.isArray(json)) {
+    json.forEach(function(item) {
+      entries.push.apply(entries, extractTimelineEntries(item));
+    });
+    return entries;
+  }
+
+  // Export do app Google Maps (celular): { semanticSegments: [ { startTime, endTime, visit: { topCandidate: { placeLocation: { latLng } } } } ] }
+  if (Array.isArray(json.semanticSegments)) {
+    json.semanticSegments.forEach(function(seg) {
+      const visit = seg.visit;
+      if (!visit || !visit.topCandidate) return;
+      const loc = parseLatLngString(visit.topCandidate.placeLocation && visit.topCandidate.placeLocation.latLng);
+      if (!loc || !seg.startTime) return;
+      entries.push({ start: seg.startTime, end: seg.endTime, lat: loc.lat, lng: loc.lng, name: null });
+    });
+  }
+
+  // Google Takeout "Semantic Location History": { timelineObjects: [ { placeVisit: { location: { latitudeE7, longitudeE7 }, duration: { startTimestamp, endTimestamp } } } ] }
+  if (Array.isArray(json.timelineObjects)) {
+    json.timelineObjects.forEach(function(obj) {
+      const pv = obj.placeVisit;
+      if (!pv || !pv.location) return;
+      const lat = pv.location.latitudeE7 != null ? pv.location.latitudeE7 / 1e7 : null;
+      const lng = pv.location.longitudeE7 != null ? pv.location.longitudeE7 / 1e7 : null;
+      const start = pv.duration && pv.duration.startTimestamp;
+      if (lat == null || lng == null || !start) return;
+      entries.push({
+        start: start,
+        end: pv.duration.endTimestamp,
+        lat: lat,
+        lng: lng,
+        name: pv.location.name || pv.location.address || null
+      });
+    });
+  }
+
+  return entries;
+}
+
+function importGoogleTimeline(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const status = document.getElementById('timelineImportStatus');
+  status.textContent = 'Lendo arquivo...';
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    let json;
+    try {
+      json = JSON.parse(e.target.result);
+    } catch (err) {
+      status.textContent = '';
+      showMessage('Arquivo inválido. Exporte a Linha do Tempo em formato .json pelo Google Maps ou Google Takeout.', 'error');
+      event.target.value = '';
+      return;
+    }
+    const raw = extractTimelineEntries(json);
+    if (raw.length === 0) {
+      status.textContent = '';
+      showMessage('Não encontrei locais nesse arquivo. Confira se exportou a Linha do Tempo (não outro tipo de dado do Google).', 'error');
+      event.target.value = '';
+      return;
+    }
+    const existingKeys = new Set(state.timeline.map(function(t) { return t.start + '|' + t.lat + '|' + t.lng; }));
+    let added = 0;
+    raw.forEach(function(r) {
+      const key = r.start + '|' + r.lat + '|' + r.lng;
+      if (!existingKeys.has(key)) {
+        state.timeline.push({
+          start: r.start,
+          end: r.end,
+          date: String(r.start).slice(0, 10),
+          lat: r.lat,
+          lng: r.lng,
+          name: r.name
+        });
+        existingKeys.add(key);
+        added++;
+      }
+    });
+    state.timeline.sort(function(a, b) { return a.start < b.start ? -1 : 1; });
+    saveTimelineData();
+    status.textContent = '';
+    document.getElementById('timelineFrom').value = '';
+    document.getElementById('timelineTo').value = '';
+    showMessage(added + ' local(is) novo(s) importado(s) da Linha do Tempo (' + state.timeline.length + ' no total).');
+    event.target.value = '';
+    renderTimelineReport();
+  };
+  reader.readAsText(file);
+}
+
+function clearTimelineData() {
+  if (!confirm('Isso apaga os dados da Linha do Tempo importados neste navegador. Continuar?')) return;
+  state.timeline = [];
+  saveTimelineData();
+  document.getElementById('timelineSummary').innerHTML = '';
+  document.getElementById('timelineList').innerHTML = '<div class="empty-state">Nenhuma Linha do Tempo importada ainda. Importe o arquivo acima para gerar o relatório.</div>';
+  showMessage('Dados da Linha do Tempo removidos.');
+}
+
+function geocodeCacheKey(lat, lng) {
+  return lat.toFixed(4) + ',' + lng.toFixed(4);
+}
+
+function labelForTimelineEntry(entry) {
+  if (entry.name) return Promise.resolve(entry.name);
+  const key = geocodeCacheKey(entry.lat, entry.lng);
+  if (state.geocodeCache[key]) return Promise.resolve(state.geocodeCache[key]);
+  return reverseGeocode(entry.lat, entry.lng).then(function(addr) {
+    state.geocodeCache[key] = addr.short;
+    saveGeocodeCache();
+    return addr.short;
+  });
+}
+
+function getTimelinePeriodDates() {
+  if (state.timeline.length === 0) return null;
+  const dates = state.timeline.map(function(t) { return t.date; }).sort();
+  return { min: dates[0], max: dates[dates.length - 1] };
+}
+
+function groupTimelineByDate(from, to) {
+  const byDate = {};
+  state.timeline.forEach(function(t) {
+    if (t.date < from || t.date > to) return;
+    if (!byDate[t.date]) byDate[t.date] = [];
+    byDate[t.date].push(t);
+  });
+  return byDate;
+}
+
+function renderTimelineReport() {
+  const summaryBox = document.getElementById('timelineSummary');
+  const listBox = document.getElementById('timelineList');
+  if (!summaryBox || !listBox) return;
+
+  if (state.timeline.length === 0) {
+    summaryBox.innerHTML = '';
+    listBox.innerHTML = '<div class="empty-state">Nenhuma Linha do Tempo importada ainda. Importe o arquivo acima para gerar o relatório.</div>';
+    return;
+  }
+
+  const range = getTimelinePeriodDates();
+  const fromEl = document.getElementById('timelineFrom');
+  const toEl = document.getElementById('timelineTo');
+  if (!fromEl.value) fromEl.value = range.min;
+  if (!toEl.value) toEl.value = range.max;
+  const from = fromEl.value;
+  const to = toEl.value;
+
+  const byDate = groupTimelineByDate(from, to);
+  const dates = Object.keys(byDate).sort();
+
+  if (dates.length === 0) {
+    summaryBox.innerHTML = '';
+    listBox.innerHTML = '<div class="empty-state">Nenhum dado da Linha do Tempo nesse período.</div>';
+    return;
+  }
+
+  const refuelInPeriod = getRefuelPeriodData(from, to);
+  summaryBox.innerHTML = '<div class="summary">' +
+    '<div style="font-size:13px;">Período analisado</div>' +
+    '<div class="summary-value">' + dates.length + ' dia(s)</div>' +
+    '<div style="font-size:12px;">' + refuelInPeriod.count + ' abastecimento(s) no período · R$ ' + refuelInPeriod.totalValue.toFixed(2) + '</div>' +
+    '</div>';
+
+  listBox.innerHTML = dates.map(function(d) {
+    return '<div class="visit-card" id="tl-day-' + d + '"><div class="visit-date">' + new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') + '</div><div class="visit-location">Carregando locais...</div></div>';
+  }).join('');
+
+  dates.forEach(function(d) {
+    const entries = byDate[d].slice().sort(function(a, b) { return a.start < b.start ? -1 : 1; });
+    Promise.all(entries.map(function(e) { return labelForTimelineEntry(e); })).then(function(labels) {
+      let km = 0;
+      for (let i = 1; i < entries.length; i++) {
+        km += haversineStraight(entries[i - 1].lat, entries[i - 1].lng, entries[i].lat, entries[i].lng);
+      }
+      const dayRefuels = state.refuels.filter(function(r) { return r.date === d; });
+      const dayVisits = state.visits.filter(function(v) { return v.dateTime.slice(0, 10) === d; });
+
+      const placesHtml = entries.map(function(e, i) {
+        const time = e.start ? new Date(e.start).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+        return '<div class="visit-location">' + (time ? time + ' — ' : '') + labels[i] + '</div>';
+      }).join('');
+
+      const refuelHtml = dayRefuels.map(function(r) {
+        return '<div class="visit-location" style="color:var(--orange);">⛽ ' + (r.station || 'Abastecimento') + ' — R$ ' + r.value.toFixed(2) + ' (' + r.liters.toFixed(2) + ' L)</div>';
+      }).join('');
+
+      const visitsHtml = dayVisits.length > 0
+        ? '<div class="visit-location" style="font-size:11px; color:var(--text-dim); margin-top:4px;">' + dayVisits.length + ' visita(s) já registrada(s) no app nesse dia</div>'
+        : '';
+
+      const el = document.getElementById('tl-day-' + d);
+      if (!el) return;
+      el.innerHTML = '<div class="visit-date">' + new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') + '</div>' +
+        placesHtml +
+        (km > 0 ? '<div class="visit-km">~' + km.toFixed(2) + ' km em linha reta entre os pontos</div>' : '') +
+        refuelHtml + visitsHtml;
+    });
+  });
+}
+
+function exportTimelinePDF() {
+  if (state.timeline.length === 0) {
+    showMessage('Importe a Linha do Tempo antes de exportar.', 'error');
+    return;
+  }
+  const from = document.getElementById('timelineFrom').value;
+  const to = document.getElementById('timelineTo').value;
+  if (!from || !to) {
+    showMessage('Preencha o período.', 'error');
+    return;
+  }
+
+  const byDate = groupTimelineByDate(from, to);
+  const dates = Object.keys(byDate).sort();
+  if (dates.length === 0) {
+    showMessage('Nenhum dado no período selecionado.', 'error');
+    return;
+  }
+
+  showMessage('Gerando PDF...');
+
+  Promise.all(dates.map(function(d) {
+    const entries = byDate[d].slice().sort(function(a, b) { return a.start < b.start ? -1 : 1; });
+    return Promise.all(entries.map(function(e) { return labelForTimelineEntry(e); })).then(function(labels) {
+      return { date: d, entries: entries, labels: labels };
+    });
+  })).then(function(days) {
+    const jsPDF = window.jspdf.jsPDF;
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    let y = 20;
+
+    doc.setFontSize(16);
+    doc.text('Relatório: Linha do Tempo x Combustível', 20, y);
+    y += 8;
+    doc.setFontSize(10);
+    doc.text('Período: ' + new Date(from + 'T12:00:00').toLocaleDateString('pt-BR') + ' a ' + new Date(to + 'T12:00:00').toLocaleDateString('pt-BR'), 20, y);
+    y += 5;
+    doc.text('Gerado em: ' + new Date().toLocaleString('pt-BR'), 20, y);
+    y += 8;
+    doc.setDrawColor(200);
+    doc.line(20, y, pageWidth - 20, y);
+    y += 8;
+
+    days.forEach(function(day) {
+      if (y > pageHeight - 40) { doc.addPage(); y = 20; }
+      doc.setFontSize(12);
+      doc.setFont(undefined, 'bold');
+      doc.text(new Date(day.date + 'T12:00:00').toLocaleDateString('pt-BR'), 20, y);
+      y += 6;
+      doc.setFontSize(9);
+      doc.setFont(undefined, 'normal');
+      day.entries.forEach(function(e, i) {
+        if (y > pageHeight - 20) { doc.addPage(); y = 20; }
+        const time = e.start ? new Date(e.start).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '--:--';
+        doc.text(time + ' - ' + day.labels[i], 24, y);
+        y += 5;
+      });
+      const dayRefuels = state.refuels.filter(function(r) { return r.date === day.date; });
+      dayRefuels.forEach(function(r) {
+        if (y > pageHeight - 20) { doc.addPage(); y = 20; }
+        doc.setFont(undefined, 'bold');
+        doc.text('Abastecimento: ' + (r.station || 'sem posto informado') + ' — R$ ' + r.value.toFixed(2) + ' (' + r.liters.toFixed(2) + ' L)', 24, y);
+        doc.setFont(undefined, 'normal');
+        y += 5;
+      });
+      y += 4;
+    });
+
+    doc.save('Linha_do_Tempo_' + from + '_ate_' + to + '_' + timeStamp() + '.pdf');
+  });
 }
 
 function exportBackup() {
