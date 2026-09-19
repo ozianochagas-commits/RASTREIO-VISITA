@@ -237,6 +237,16 @@
     </div>
 
     <div class="filter-group">
+      <h3 style="margin-bottom: 8px;">Importar visitas esquecidas (planilha)</h3>
+      <p style="font-size: 12px; color: var(--text-dim); margin-bottom: 12px;">Baixe o modelo, preencha uma linha por visita esquecida (data, hora, local e km rodado desde a visita anterior) e importe todas de uma vez. A data/hora de cada visita é atualizada de acordo com o que estiver na planilha.</p>
+      <div class="grid2" style="margin-bottom: 0;">
+        <button onclick="downloadVisitImportTemplate()">Baixar modelo</button>
+        <button onclick="document.getElementById('importVisitsCsv').click()">Importar planilha</button>
+      </div>
+      <input type="file" id="importVisitsCsv" accept=".csv" style="display:none" onchange="importVisitsFromCsv(event)">
+    </div>
+
+    <div class="filter-group">
       <h3 style="margin-bottom: 8px;">Recalcular distâncias</h3>
       <p style="font-size: 12px; color: var(--text-dim); margin-bottom: 12px;">Aplica o fator de correção de estrada atual a todas as visitas já registradas. Use depois de mudar o fator na aba Combustível.</p>
       <button class="btn-primary full-w" onclick="confirmRecalc()">Recalcular todas as distâncias</button>
@@ -2400,6 +2410,95 @@ function importBackup(event) {
     event.target.value = '';
   };
   reader.readAsText(file);
+}
+
+function downloadVisitImportTemplate() {
+  const rows = [
+    ['Data', 'Hora', 'Local', 'Km rodado (desde a visita anterior)'],
+    ['20/09/2026', '08:30', 'Rua Exemplo, 123 - Bairro', '12,5']
+  ];
+  downloadCsv(rows, 'Modelo_Importar_Visitas.csv');
+}
+
+// Parser simples de linha CSV separada por ; (com suporte a campos entre aspas).
+function parseCsvLine(line) {
+  const out = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; } else inQuotes = false;
+      } else cur += c;
+    } else if (c === '"') {
+      inQuotes = true;
+    } else if (c === ';') {
+      out.push(cur); cur = '';
+    } else {
+      cur += c;
+    }
+  }
+  out.push(cur);
+  return out;
+}
+
+function importVisitsFromCsv(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      let text = e.target.result;
+      if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+      const lines = text.split(/\r\n|\n|\r/).filter(function(l) { return l.trim() !== ''; });
+      if (lines.length < 2) {
+        showMessage('Planilha vazia. Preencha ao menos uma linha de visita.', 'error');
+        event.target.value = '';
+        return;
+      }
+
+      const existingKeys = new Set(state.visits.map(function(v) { return v.dateTime + v.locationName; }));
+      let added = 0, skipped = 0;
+
+      for (let i = 1; i < lines.length; i++) {
+        const cols = parseCsvLine(lines[i]);
+        const dataStr = (cols[0] || '').trim();
+        const horaStr = (cols[1] || '').trim();
+        const local = (cols[2] || '').trim();
+        const kmStr = (cols[3] || '').trim();
+
+        if (!dataStr || !local) { skipped++; continue; }
+
+        const dataParts = dataStr.split('/');
+        if (dataParts.length !== 3 || dataParts[2].length !== 4) { skipped++; continue; }
+        const hora = /^\d{1,2}:\d{2}/.test(horaStr) ? horaStr : '12:00';
+        const isoLocal = dataParts[2] + '-' + dataParts[1].padStart(2, '0') + '-' + dataParts[0].padStart(2, '0') +
+          'T' + hora.padStart(5, '0') + ':00';
+        const d = new Date(isoLocal);
+        if (isNaN(d.getTime())) { skipped++; continue; }
+
+        const km = parseFloat(kmStr.replace(',', '.')) || 0;
+        const newVisit = { dateTime: d.toISOString(), locationName: local, distance: km, notes: 'Importado via planilha' };
+        const key = newVisit.dateTime + newVisit.locationName;
+        if (existingKeys.has(key)) { skipped++; continue; }
+
+        state.visits.push(newVisit);
+        existingKeys.add(key);
+        added++;
+        cloudSaveVisit(newVisit).then(function(id) { if (id) { newVisit.id = id; saveState(); } });
+      }
+
+      saveState();
+      renderVisitsList();
+      updateLastLocationLabel();
+      showMessage(added + ' visita(s) importada(s)' + (skipped ? ', ' + skipped + ' linha(s) ignorada(s) (confira data/local)' : '') + '.');
+    } catch (err) {
+      showMessage('Erro ao ler a planilha. Confira se seguiu o modelo baixado.', 'error');
+    }
+    event.target.value = '';
+  };
+  reader.readAsText(file, 'UTF-8');
 }
 
 function formatLocalDateTimeInput(d) {
