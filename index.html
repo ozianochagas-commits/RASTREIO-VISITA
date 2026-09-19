@@ -2420,8 +2420,11 @@ function downloadVisitImportTemplate() {
   downloadCsv(rows, 'Modelo_Importar_Visitas.csv');
 }
 
-// Parser simples de linha CSV separada por ; (com suporte a campos entre aspas).
-function parseCsvLine(line) {
+// Parser simples de linha CSV (com suporte a campos entre aspas), com
+// delimitador escolhido dinamicamente — Excel/Brasil costuma exportar com
+// ";", já o Google Sheets sempre exporta com "," (mesmo em planilha com
+// vírgula decimal), então detectamos pelo cabeçalho em vez de fixar um só.
+function parseCsvLine(line, delimiter) {
   const out = [];
   let cur = '';
   let inQuotes = false;
@@ -2433,7 +2436,7 @@ function parseCsvLine(line) {
       } else cur += c;
     } else if (c === '"') {
       inQuotes = true;
-    } else if (c === ';') {
+    } else if (c === delimiter) {
       out.push(cur); cur = '';
     } else {
       cur += c;
@@ -2441,6 +2444,27 @@ function parseCsvLine(line) {
   }
   out.push(cur);
   return out;
+}
+
+function detectCsvDelimiter(headerLine) {
+  const semicolons = (headerLine.match(/;/g) || []).length;
+  const commas = (headerLine.match(/,/g) || []).length;
+  return semicolons >= commas ? ';' : ',';
+}
+
+// Aceita DD/MM/AAAA, DD-MM-AAAA ou AAAA-MM-DD.
+function parseVisitDateStr(dataStr) {
+  let dd, mm, yyyy;
+  if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}$/.test(dataStr)) {
+    const p = dataStr.split(/[-/]/);
+    yyyy = p[0]; mm = p[1]; dd = p[2];
+  } else if (/^\d{1,2}[-/]\d{1,2}[-/]\d{4}$/.test(dataStr)) {
+    const p = dataStr.split(/[-/]/);
+    dd = p[0]; mm = p[1]; yyyy = p[2];
+  } else {
+    return null;
+  }
+  return yyyy + '-' + mm.padStart(2, '0') + '-' + dd.padStart(2, '0');
 }
 
 function importVisitsFromCsv(event) {
@@ -2458,30 +2482,42 @@ function importVisitsFromCsv(event) {
         return;
       }
 
+      const delimiter = detectCsvDelimiter(lines[0]);
       const existingKeys = new Set(state.visits.map(function(v) { return v.dateTime + v.locationName; }));
-      let added = 0, skipped = 0;
+      let added = 0, skipped = 0, duplicated = 0;
+      let firstProblem = null;
 
       for (let i = 1; i < lines.length; i++) {
-        const cols = parseCsvLine(lines[i]);
+        const cols = parseCsvLine(lines[i], delimiter);
         const dataStr = (cols[0] || '').trim();
         const horaStr = (cols[1] || '').trim();
         const local = (cols[2] || '').trim();
         const kmStr = (cols[3] || '').trim();
 
-        if (!dataStr || !local) { skipped++; continue; }
+        if (!dataStr || !local) {
+          skipped++;
+          if (!firstProblem) firstProblem = 'linha ' + (i + 1) + ': faltou data ou local ("' + lines[i] + '")';
+          continue;
+        }
 
-        const dataParts = dataStr.split('/');
-        if (dataParts.length !== 3 || dataParts[2].length !== 4) { skipped++; continue; }
+        const dataIso = parseVisitDateStr(dataStr);
+        if (!dataIso) {
+          skipped++;
+          if (!firstProblem) firstProblem = 'linha ' + (i + 1) + ': não entendi a data "' + dataStr + '" (use DD/MM/AAAA)';
+          continue;
+        }
         const hora = /^\d{1,2}:\d{2}/.test(horaStr) ? horaStr : '12:00';
-        const isoLocal = dataParts[2] + '-' + dataParts[1].padStart(2, '0') + '-' + dataParts[0].padStart(2, '0') +
-          'T' + hora.padStart(5, '0') + ':00';
-        const d = new Date(isoLocal);
-        if (isNaN(d.getTime())) { skipped++; continue; }
+        const d = new Date(dataIso + 'T' + hora.padStart(5, '0') + ':00');
+        if (isNaN(d.getTime())) {
+          skipped++;
+          if (!firstProblem) firstProblem = 'linha ' + (i + 1) + ': data/hora inválida ("' + dataStr + ' ' + horaStr + '")';
+          continue;
+        }
 
         const km = parseFloat(kmStr.replace(',', '.')) || 0;
         const newVisit = { dateTime: d.toISOString(), locationName: local, distance: km, notes: 'Importado via planilha' };
         const key = newVisit.dateTime + newVisit.locationName;
-        if (existingKeys.has(key)) { skipped++; continue; }
+        if (existingKeys.has(key)) { duplicated++; continue; }
 
         state.visits.push(newVisit);
         existingKeys.add(key);
@@ -2492,7 +2528,14 @@ function importVisitsFromCsv(event) {
       saveState();
       renderVisitsList();
       updateLastLocationLabel();
-      showMessage(added + ' visita(s) importada(s)' + (skipped ? ', ' + skipped + ' linha(s) ignorada(s) (confira data/local)' : '') + '.');
+
+      if (added === 0 && skipped > 0) {
+        showMessage('Nenhuma linha importada. ' + (firstProblem || 'Confira se seguiu o modelo baixado.'), 'error');
+      } else {
+        showMessage(added + ' visita(s) importada(s)' +
+          (skipped ? ', ' + skipped + ' linha(s) ignorada(s) (' + firstProblem + ')' : '') +
+          (duplicated ? ', ' + duplicated + ' já existiam' : '') + '.');
+      }
     } catch (err) {
       showMessage('Erro ao ler a planilha. Confira se seguiu o modelo baixado.', 'error');
     }
