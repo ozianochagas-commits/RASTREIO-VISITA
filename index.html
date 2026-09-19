@@ -367,6 +367,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script>
 // ===== CONEXÃO COM O BANCO DE DADOS (SUPABASE) =====
 const SUPABASE_URL = 'https://pojfdvniqsggialenfca.supabase.co';
@@ -1631,6 +1632,111 @@ function saveRefuels() {
 
 let pendingPhoto = null;
 
+// Modelos conhecidos de cupom/NFC-e de combustível: cada um sabe reconhecer
+// seu próprio layout (por uma marca no texto) e extrair data, valor, litros e posto.
+// Para reconhecer um novo modelo de nota, basta adicionar um item aqui.
+const receiptTemplates = [
+  {
+    name: 'Maquininha Cielo',
+    match: function(text) { return /CIELO/i.test(text); },
+    parse: function(text) {
+      return {
+        value: matchNumber(text, /(?:VALOR A PAGAR|VALOR TOTAL)\s*R?\$?\s*([\d.,]+)/i),
+        liters: matchNumber(text, /([\d]+[.,][\d]{2,3})\s*I?LT?\b/i),
+        date: matchDate(text, /Data de Autoriza[çc][ãa]o\s*-?\s*(\d{2}\/\d{2}\/\d{4})/i),
+        station: matchLine(text, /POSTO[^\n]*/i)
+      };
+    }
+  },
+  {
+    name: 'NFC-e padrão (SEFAZ)',
+    match: function(text) { return /NFC-?e|DOCUMENTO AUXILIAR DA NOTA FISCAL/i.test(text); },
+    parse: function(text) {
+      return {
+        value: matchNumber(text, /VALOR TOTAL\s*R\$\s*([\d.,]+)/i),
+        liters: matchNumber(text, /([\d]+[.,][\d]{2,3})\s*I?LT?\b/i),
+        date: matchDate(text, /Data de autoriza[çc][ãa]o:?\s*(\d{2}\/\d{2}\/\d{4})/i),
+        station: matchLine(text, /POSTO[^\n]*/i) || firstNonEmptyLine(text)
+      };
+    }
+  }
+];
+
+function genericParseReceipt(text) {
+  return {
+    value: matchNumber(text, /(?:VALOR TOTAL|VALOR A PAGAR)\s*R?\$?\s*([\d.,]+)/i) || matchNumber(text, /R\$\s*([\d.,]+)/i),
+    liters: matchNumber(text, /([\d]+[.,][\d]{2,3})\s*I?LT?\b/i),
+    date: matchDate(text, /Data de [Aa]utoriza[çc][ãa]o\s*:?\s*-?\s*(\d{2}\/\d{2}\/\d{4})/i) || matchDate(text, /(\d{2}\/\d{2}\/\d{4})/),
+    station: matchLine(text, /POSTO[^\n]*/i) || firstNonEmptyLine(text)
+  };
+}
+
+function matchNumber(text, regex) {
+  const m = text.match(regex);
+  if (!m) return null;
+  const n = parseFloat(m[1].replace(/\.(?=\d{3})/g, '').replace(',', '.'));
+  return isNaN(n) ? null : n;
+}
+
+function matchDate(text, regex) {
+  const m = text.match(regex);
+  if (!m) return null;
+  const parts = m[1].split('/');
+  if (parts.length !== 3) return null;
+  return parts[2] + '-' + parts[1] + '-' + parts[0];
+}
+
+function matchLine(text, regex) {
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    if (regex.test(lines[i])) return lines[i].trim().replace(/\s+/g, ' ');
+  }
+  return null;
+}
+
+function firstNonEmptyLine(text) {
+  const lines = text.split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
+  return lines.length ? lines[0] : null;
+}
+
+function parseReceiptText(text) {
+  for (let i = 0; i < receiptTemplates.length; i++) {
+    if (receiptTemplates[i].match(text)) {
+      const r = receiptTemplates[i].parse(text);
+      if (r.date || r.value || r.liters) return r;
+    }
+  }
+  return genericParseReceipt(text);
+}
+
+function runReceiptOCR(dataUrl) {
+  const preview = document.getElementById('refuelPhotoPreview');
+  if (typeof Tesseract === 'undefined') return;
+  const status = document.createElement('div');
+  status.className = 'suggestion-loading';
+  status.style.marginTop = '6px';
+  status.textContent = 'Lendo dados do cupom...';
+  preview.appendChild(status);
+
+  Tesseract.recognize(dataUrl, 'por').then(function(result) {
+    const text = result.data.text || '';
+    const data = parseReceiptText(text);
+    let found = [];
+    if (data.date) { document.getElementById('refuelDate').value = data.date; found.push('data'); }
+    if (data.value) { document.getElementById('refuelValue').value = data.value.toFixed(2); found.push('valor'); }
+    if (data.liters) { document.getElementById('refuelLiters').value = data.liters.toFixed(2); found.push('litros'); }
+    if (data.station && !document.getElementById('refuelStation').value) {
+      document.getElementById('refuelStation').value = data.station;
+      found.push('posto');
+    }
+    status.textContent = found.length
+      ? 'Identificado no cupom: ' + found.join(', ') + '. Confira antes de salvar.'
+      : 'Não consegui identificar os dados do cupom. Preencha manualmente.';
+  }).catch(function() {
+    status.textContent = 'Não foi possível ler o cupom automaticamente. Preencha manualmente.';
+  });
+}
+
 function onRefuelPhotoSelected(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -1654,6 +1760,7 @@ function onRefuelPhotoSelected(event) {
       const kb = Math.round(pendingPhoto.length * 0.75 / 1024);
       preview.innerHTML = '<img src="' + pendingPhoto + '" style="max-width:100%; border-radius:8px; border:1px solid var(--border-c);">' +
         '<div style="font-size:11px; color:var(--text-dim); margin-top:4px;">Foto anexada (~' + kb + ' KB). <span style="color:#ff6b6b; cursor:pointer;" onclick="clearPendingPhoto()">Remover</span></div>';
+      runReceiptOCR(pendingPhoto);
     };
     img.src = e.target.result;
   };
