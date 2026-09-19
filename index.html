@@ -1991,6 +1991,18 @@ function getRefuelPeriodData(from, to) {
   return { list: filtered, count: filtered.length, totalValue: totalValue, totalLiters: totalLiters };
 }
 
+// Compara o total abastecido no período com o que o consumo configurado
+// exigiria para rodar o total de km do período (não é por dia, já que
+// combustível comprado num dia cobre viagens de outros dias também).
+function getInsufficientFuelWarning(totalKm, refuelData) {
+  if (!state.fuel.kml || totalKm <= 0) return null;
+  const litrosNecessarios = totalKm / state.fuel.kml;
+  if (refuelData.totalLiters >= litrosNecessarios) return null;
+  const faltam = litrosNecessarios - refuelData.totalLiters;
+  return 'Abastecimento insuficiente: rodou ' + totalKm.toFixed(2) + ' km (precisaria de ~' + litrosNecessarios.toFixed(2) +
+    ' L) mas abasteceu só ' + refuelData.totalLiters.toFixed(2) + ' L no período (faltam ~' + faltam.toFixed(2) + ' L).';
+}
+
 // ===== RELATÓRIO: ONDE FUI (visitas x abastecimento no período) =====
 
 function getTimelinePeriodDates() {
@@ -2052,6 +2064,7 @@ function renderTimelineReport() {
     return sum + byDate[d].visits.reduce(function(s, v) { return s + (v.distance || 0); }, 0);
   }, 0);
   const refuelInPeriod = getRefuelPeriodData(from, to);
+  const fuelWarning = getInsufficientFuelWarning(totalKm, refuelInPeriod);
   summaryBox.innerHTML = '<div class="summary">' +
     '<div style="font-size:13px;">Período analisado</div>' +
     '<div class="summary-value">' + dates.length + ' dia(s)</div>' +
@@ -2062,6 +2075,9 @@ function renderTimelineReport() {
         '<p style="font-size:12px; color:var(--text-dim); margin-bottom:8px;">Nenhum abastecimento nesse período. A nota fiscal/comprovante é anexada ao registrar o abastecimento, na aba Combustível.</p>' +
         '<button class="btn-primary full-w" onclick="switchTab(\'combustivel\')">Registrar abastecimento agora</button>' +
         '</div>'
+      : '') +
+    (fuelWarning
+      ? '<div class="visit-card" style="border-color:var(--orange); margin-top:12px;"><div class="visit-location" style="color:var(--orange); font-weight:600;">⚠️ ' + fuelWarning + '</div></div>'
       : '');
 
   const datesRecentFirst = dates.slice().reverse();
@@ -2132,6 +2148,23 @@ function generateTimelinePDF() {
   y += 5;
   doc.text('Gerado em: ' + new Date().toLocaleString('pt-BR'), 20, y);
   y += 8;
+
+  const totalKmPeriod = dates.reduce(function(sum, d) {
+    return sum + byDate[d].visits.reduce(function(s, v) { return s + (v.distance || 0); }, 0);
+  }, 0);
+  const refuelInPeriod = getRefuelPeriodData(from, to);
+  const fuelWarning = getInsufficientFuelWarning(totalKmPeriod, refuelInPeriod);
+  if (fuelWarning) {
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(200, 100, 0);
+    const warnLines = doc.splitTextToSize('⚠ ' + fuelWarning, pageWidth - 40);
+    doc.text(warnLines, 20, y);
+    y += warnLines.length * 5 + 3;
+    doc.setTextColor(0, 0, 0);
+    doc.setFont(undefined, 'normal');
+  }
+
   doc.setDrawColor(200);
   doc.line(20, y, pageWidth - 20, y);
   y += 8;
@@ -2194,6 +2227,14 @@ function generateTimelineExcel() {
   }
 
   const rows = [['Data', 'Hora', 'Local visitado', 'Km da visita', 'Total km no dia', 'Abastecimento (posto)', 'Valor pago (R$)', 'Litros']];
+
+  const totalKmPeriod = dates.reduce(function(sum, d) {
+    return sum + byDate[d].visits.reduce(function(s, v) { return s + (v.distance || 0); }, 0);
+  }, 0);
+  const refuelInPeriod = getRefuelPeriodData(from, to);
+  const fuelWarning = getInsufficientFuelWarning(totalKmPeriod, refuelInPeriod);
+  if (fuelWarning) rows.push(['', '', '⚠ ' + fuelWarning, '', '', '', '', '']);
+
   dates.forEach(function(d) {
     const day = byDate[d];
     const dataBr = new Date(d + 'T12:00:00').toLocaleDateString('pt-BR');
