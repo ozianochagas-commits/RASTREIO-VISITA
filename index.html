@@ -351,6 +351,8 @@
         </div>
       </div>
       <button class="btn-primary full-w" onclick="renderTimelineReport()">Gerar relatório</button>
+      <button class="btn-export full-w" onclick="generateTimelinePDF()">Exportar em PDF</button>
+      <button class="btn-export full-w" onclick="generateTimelineExcel()">Exportar em Excel</button>
     </div>
 
     <div id="timelineSummary"></div>
@@ -358,7 +360,7 @@
   </div>
 
   <div style="text-align:center; color:var(--orange); font-size:12px; margin-top:1.5rem; padding:12px; border:1px dashed var(--orange); border-radius:8px;">
-    ✓ Versão 4.2 — Atalho para registrar abastecimento<br>
+    ✓ Versão 4.3 — Exportar PDF/Excel e paginação de 3<br>
     <span id="loadStamp" style="color:var(--text-dim); font-size:10px;"></span>
   </div>
 </div>
@@ -1043,6 +1045,7 @@ function resetChain() {
 
 let showAllVisits = false;
 let showAllPeriod = false;
+let showAllTimeline = false;
 
 function renderVisitsList() {
   const visitsList = document.getElementById('visitsList');
@@ -1835,31 +1838,156 @@ function renderTimelineReport() {
         '</div>'
       : '');
 
-  listBox.innerHTML = dates.map(function(d) {
+  const datesRecentFirst = dates.slice().reverse();
+  const toShow = showAllTimeline ? datesRecentFirst : datesRecentFirst.slice(0, 3);
+
+  let html = toShow.map(function(d) { return timelineDayCardHtml(d, byDate[d]); }).join('');
+  if (dates.length > 3) {
+    if (showAllTimeline) {
+      html += '<button class="full-w" onclick="showAllTimeline=false;renderTimelineReport();" style="margin-top:4px;">Mostrar menos (só os 3 últimos)</button>';
+    } else {
+      html += '<button class="full-w" onclick="showAllTimeline=true;renderTimelineReport();" style="margin-top:4px;">Ver todos os ' + dates.length + ' dias do período</button>';
+    }
+  }
+  html += '<p class="hint" style="text-align:center; margin-top:8px;">O PDF e o Excel sempre incluem todos os ' + dates.length + ' dias do período, mesmo mostrando só 3 aqui.</p>';
+  listBox.innerHTML = html;
+}
+
+function timelineDayCardHtml(d, day) {
+  const sortedVisits = day.visits.slice().sort(function(a, b) { return new Date(a.dateTime) - new Date(b.dateTime); });
+  const dayKm = sortedVisits.reduce(function(s, v) { return s + (v.distance || 0); }, 0);
+
+  const placesHtml = sortedVisits.length > 0
+    ? sortedVisits.map(function(v) {
+        const time = new Date(v.dateTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        return '<div class="visit-location">' + time + ' — ' + v.locationName + ' <span style="color:var(--text-dim); font-size:11px;">(' + (v.distance || 0).toFixed(2) + ' km)</span></div>';
+      }).join('')
+    : '<div class="visit-location" style="font-size:11px; color:var(--text-dim);">Nenhuma visita registrada nesse dia</div>';
+
+  const refuelHtml = day.refuels.map(function(r) {
+    const idx = state.refuels.indexOf(r);
+    return '<div class="visit-location" style="color:var(--orange);">⛽ ' + (r.station || 'Abastecimento') + ' — R$ ' + r.value.toFixed(2) + ' (' + r.liters.toFixed(2) + ' L)</div>' +
+      (r.photo ? '<img src="' + r.photo + '" onclick="viewRefuelPhoto(' + idx + ')" style="margin-top:6px; max-height:80px; border-radius:6px; border:1px solid var(--border-c); cursor:pointer;"> <div style="font-size:11px; color:var(--text-dim); margin-top:2px;">Comprovante — toque para ampliar</div>' : '');
+  }).join('');
+
+  return '<div class="visit-card">' +
+    '<div class="visit-date">' + new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') + '</div>' +
+    placesHtml +
+    (dayKm > 0 ? '<div class="visit-km">' + dayKm.toFixed(2) + ' km no dia</div>' : '') +
+    refuelHtml +
+    '</div>';
+}
+
+function generateTimelinePDF() {
+  const from = document.getElementById('timelineFrom').value;
+  const to = document.getElementById('timelineTo').value;
+  if (!from || !to) {
+    showMessage('Preencha as datas inicial e final.', 'error');
+    return;
+  }
+  const byDate = groupTimelineByDate(from, to);
+  const dates = Object.keys(byDate).sort();
+  if (dates.length === 0) {
+    showMessage('Nenhuma visita ou abastecimento nesse período.', 'error');
+    return;
+  }
+
+  const jsPDF = window.jspdf.jsPDF;
+  const doc = new jsPDF();
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  let y = 20;
+
+  doc.setFontSize(16);
+  doc.text('Relatório: Onde Fui', 20, y);
+  y += 8;
+  doc.setFontSize(10);
+  doc.text('Período: ' + new Date(from + 'T12:00:00').toLocaleDateString('pt-BR') + ' a ' + new Date(to + 'T12:00:00').toLocaleDateString('pt-BR'), 20, y);
+  y += 5;
+  doc.text('Gerado em: ' + new Date().toLocaleString('pt-BR'), 20, y);
+  y += 8;
+  doc.setDrawColor(200);
+  doc.line(20, y, pageWidth - 20, y);
+  y += 8;
+
+  dates.forEach(function(d) {
     const day = byDate[d];
     const sortedVisits = day.visits.slice().sort(function(a, b) { return new Date(a.dateTime) - new Date(b.dateTime); });
     const dayKm = sortedVisits.reduce(function(s, v) { return s + (v.distance || 0); }, 0);
 
-    const placesHtml = sortedVisits.length > 0
-      ? sortedVisits.map(function(v) {
-          const time = new Date(v.dateTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-          return '<div class="visit-location">' + time + ' — ' + v.locationName + ' <span style="color:var(--text-dim); font-size:11px;">(' + (v.distance || 0).toFixed(2) + ' km)</span></div>';
-        }).join('')
-      : '<div class="visit-location" style="font-size:11px; color:var(--text-dim);">Nenhuma visita registrada nesse dia</div>';
+    if (y > pageHeight - 40) { doc.addPage(); y = 20; }
+    doc.setFontSize(12);
+    doc.setFont(undefined, 'bold');
+    doc.text(new Date(d + 'T12:00:00').toLocaleDateString('pt-BR'), 20, y);
+    y += 6;
+    doc.setFontSize(9);
+    doc.setFont(undefined, 'normal');
 
-    const refuelHtml = day.refuels.map(function(r) {
-      const idx = state.refuels.indexOf(r);
-      return '<div class="visit-location" style="color:var(--orange);">⛽ ' + (r.station || 'Abastecimento') + ' — R$ ' + r.value.toFixed(2) + ' (' + r.liters.toFixed(2) + ' L)</div>' +
-        (r.photo ? '<img src="' + r.photo + '" onclick="viewRefuelPhoto(' + idx + ')" style="margin-top:6px; max-height:80px; border-radius:6px; border:1px solid var(--border-c); cursor:pointer;"> <div style="font-size:11px; color:var(--text-dim); margin-top:2px;">Comprovante — toque para ampliar</div>' : '');
-    }).join('');
+    if (sortedVisits.length === 0) {
+      doc.text('Nenhuma visita registrada nesse dia', 24, y);
+      y += 5;
+    }
+    sortedVisits.forEach(function(v) {
+      if (y > pageHeight - 20) { doc.addPage(); y = 20; }
+      const time = new Date(v.dateTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      doc.text(time + ' - ' + v.locationName + ' (' + (v.distance || 0).toFixed(2) + ' km)', 24, y);
+      y += 5;
+    });
+    if (dayKm > 0) {
+      if (y > pageHeight - 20) { doc.addPage(); y = 20; }
+      doc.setFont(undefined, 'bold');
+      doc.text('Total do dia: ' + dayKm.toFixed(2) + ' km', 24, y);
+      doc.setFont(undefined, 'normal');
+      y += 5;
+    }
+    day.refuels.forEach(function(r) {
+      if (y > pageHeight - 20) { doc.addPage(); y = 20; }
+      doc.setFont(undefined, 'bold');
+      doc.text('Abastecimento: ' + (r.station || 'sem posto informado') + ' — R$ ' + r.value.toFixed(2) + ' (' + r.liters.toFixed(2) + ' L)', 24, y);
+      doc.setFont(undefined, 'normal');
+      y += 5;
+    });
+    y += 4;
+  });
 
-    return '<div class="visit-card">' +
-      '<div class="visit-date">' + new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') + '</div>' +
-      placesHtml +
-      (dayKm > 0 ? '<div class="visit-km">' + dayKm.toFixed(2) + ' km no dia</div>' : '') +
-      refuelHtml +
-      '</div>';
-  }).join('');
+  doc.save('Onde_Fui_' + from + '_ate_' + to + '_' + timeStamp() + '.pdf');
+}
+
+function generateTimelineExcel() {
+  const from = document.getElementById('timelineFrom').value;
+  const to = document.getElementById('timelineTo').value;
+  if (!from || !to) {
+    showMessage('Preencha as datas inicial e final.', 'error');
+    return;
+  }
+  const byDate = groupTimelineByDate(from, to);
+  const dates = Object.keys(byDate).sort();
+  if (dates.length === 0) {
+    showMessage('Nenhuma visita ou abastecimento nesse período.', 'error');
+    return;
+  }
+
+  const rows = [['Data', 'Hora', 'Local visitado', 'Km da visita', 'Total km no dia', 'Abastecimento (posto)', 'Valor pago (R$)', 'Litros']];
+  dates.forEach(function(d) {
+    const day = byDate[d];
+    const dataBr = new Date(d + 'T12:00:00').toLocaleDateString('pt-BR');
+    const sortedVisits = day.visits.slice().sort(function(a, b) { return new Date(a.dateTime) - new Date(b.dateTime); });
+    const dayKm = sortedVisits.reduce(function(s, v) { return s + (v.distance || 0); }, 0);
+
+    sortedVisits.forEach(function(v) {
+      const time = new Date(v.dateTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      rows.push([dataBr, time, v.locationName || '', (v.distance || 0).toFixed(2).replace('.', ','), '', '', '', '']);
+    });
+    if (dayKm > 0) {
+      rows.push([dataBr, '', 'Total do dia', '', dayKm.toFixed(2).replace('.', ','), '', '', '']);
+    }
+    day.refuels.forEach(function(r) {
+      rows.push([dataBr, '', '', '', '', r.station || '', r.value.toFixed(2).replace('.', ','), r.liters.toFixed(2).replace('.', ',')]);
+    });
+  });
+
+  downloadCsv(rows, 'Onde_Fui_' + from + '_ate_' + to + '_' + timeStamp() + '.csv');
+  showMessage('Excel exportado! Abra o arquivo .csv no Excel, Google Sheets ou similar.');
 }
 
 function exportBackup() {
