@@ -2051,25 +2051,19 @@ function getRefuelPeriodData(from, to) {
 // Compara o total abastecido no período com o que o consumo configurado
 // exigiria para rodar o total de km do período (não é por dia, já que
 // combustível comprado num dia cobre viagens de outros dias também).
-// Tudo expresso em km, pra dar pra comparar direto:
-//  - km percorrido: distância das visitas no período
-//  - km abastecido: quanto os litros realmente comprados dariam pra rodar
-//  - km necessário: o mínimo aceitável de km-equivalente já COM a margem
-//    de tolerância (consumo real varia com trânsito, ar-condicionado etc.,
-//    não é uma conta exata)
+// Aplica uma margem de tolerância antes de marcar como não validado,
+// porque consumo real varia (trânsito, ar-condicionado etc.) e não é
+// uma conta exata.
 const FUEL_VALIDATION_TOLERANCE = 0.15; // 15%
 
 function getFuelValidationStatus(totalKm, refuelData) {
   if (!state.fuel.kml || totalKm <= 0) return null;
-  const kml = state.fuel.kml;
-  const kmPercorrido = totalKm;
-  const kmAbastecido = refuelData.totalLiters * kml;
-  const kmNecessario = totalKm * (1 - FUEL_VALIDATION_TOLERANCE);
+  const litrosNecessarios = (totalKm / state.fuel.kml) * (1 - FUEL_VALIDATION_TOLERANCE);
   return {
-    ok: kmAbastecido >= kmNecessario,
-    kmPercorrido: kmPercorrido,
-    kmAbastecido: kmAbastecido,
-    kmNecessario: kmNecessario
+    ok: refuelData.totalLiters >= litrosNecessarios,
+    kmPercorrido: totalKm,
+    litrosNecessarios: litrosNecessarios,
+    litrosAbastecido: refuelData.totalLiters
   };
 }
 
@@ -2139,8 +2133,8 @@ function renderTimelineReport() {
     (fuelStatus
       ? '<div class="visit-card" style="border-color:' + (fuelStatus.ok ? 'var(--green, #2ecc71)' : 'var(--orange)') + '; margin-bottom:12px;">' +
         '<div class="visit-location">Total km percorrido: <strong>' + fuelStatus.kmPercorrido.toFixed(2) + ' km</strong></div>' +
-        '<div class="visit-location">Total km abastecido: <strong>' + fuelStatus.kmAbastecido.toFixed(2) + ' km</strong></div>' +
-        '<div class="visit-location">Total km necessário: <strong>' + fuelStatus.kmNecessario.toFixed(2) + ' km</strong></div>' +
+        '<div class="visit-location">Total necessário litros: <strong>' + fuelStatus.litrosNecessarios.toFixed(2) + ' L</strong></div>' +
+        '<div class="visit-location">Total litros abastecido: <strong>' + fuelStatus.litrosAbastecido.toFixed(2) + ' L</strong></div>' +
         '<div class="visit-location" style="color:' + (fuelStatus.ok ? 'var(--green, #2ecc71)' : 'var(--orange)') + '; font-weight:600; margin-top:4px;">' +
         (fuelStatus.ok ? '✅ VALIDADO' : '⚠️ NÃO VALIDADO') + '</div></div>'
       : '') +
@@ -2234,8 +2228,8 @@ function generateTimelinePDF() {
     doc.setFontSize(10);
     doc.setFont(undefined, 'normal');
     doc.text('Total km percorrido: ' + fuelStatus.kmPercorrido.toFixed(2) + ' km', 20, y); y += 5;
-    doc.text('Total km abastecido: ' + fuelStatus.kmAbastecido.toFixed(2) + ' km', 20, y); y += 5;
-    doc.text('Total km necessário: ' + fuelStatus.kmNecessario.toFixed(2) + ' km', 20, y); y += 5;
+    doc.text('Total necessário litros: ' + fuelStatus.litrosNecessarios.toFixed(2) + ' L', 20, y); y += 5;
+    doc.text('Total litros abastecido: ' + fuelStatus.litrosAbastecido.toFixed(2) + ' L', 20, y); y += 5;
     doc.setFont(undefined, 'bold');
     if (fuelStatus.ok) doc.setTextColor(0, 140, 60); else doc.setTextColor(200, 100, 0);
     doc.text(fuelStatus.ok ? '✔ VALIDADO' : '⚠ NÃO VALIDADO', 20, y);
@@ -2314,8 +2308,8 @@ function generateTimelineExcel() {
   const fuelStatus = getFuelValidationStatus(totalKmPeriod, refuelInPeriod);
   if (fuelStatus) {
     rows.push(['TOTAL KM PERCORRIDO', fuelStatus.kmPercorrido.toFixed(2).replace('.', ','), '', '', '', '', '', '']);
-    rows.push(['TOTAL KM ABASTECIDO', fuelStatus.kmAbastecido.toFixed(2).replace('.', ','), '', '', '', '', '', '']);
-    rows.push(['TOTAL KM NECESSÁRIO', fuelStatus.kmNecessario.toFixed(2).replace('.', ','), '', '', '', '', '', '']);
+    rows.push(['TOTAL NECESSARIO LITROS', fuelStatus.litrosNecessarios.toFixed(2).replace('.', ','), '', '', '', '', '', '']);
+    rows.push(['TOTAL LITROS ABASTECIDO', fuelStatus.litrosAbastecido.toFixed(2).replace('.', ','), '', '', '', '', '', '']);
     rows.push(['VALIDADO OU NÃO VALIDADO', fuelStatus.ok ? 'VALIDADO' : 'NÃO VALIDADO', '', '', '', '', '', '']);
     rows.push(['', '', '', '', '', '', '', '']);
   }
