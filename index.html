@@ -2517,7 +2517,10 @@ function importVisitsFromCsv(event) {
         const km = parseFloat(kmStr.replace(',', '.')) || 0;
         const newVisit = { dateTime: d.toISOString(), locationName: local, distance: km, notes: 'Importado via planilha' };
         const key = newVisit.dateTime + newVisit.locationName;
-        if (existingKeys.has(key)) { duplicated++; continue; }
+        if (existingKeys.has(key)) {
+          const manter = confirm('Já existe uma visita em "' + local + '" com essa mesma data/hora (' + d.toLocaleString('pt-BR') + '). Importar mesmo assim (duplicar)?');
+          if (!manter) { duplicated++; continue; }
+        }
 
         state.visits.push(newVisit);
         existingKeys.add(key);
