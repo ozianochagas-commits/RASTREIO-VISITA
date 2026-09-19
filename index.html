@@ -326,8 +326,12 @@
       </div>
       <div class="form-group">
         <label>Foto do comprovante (opcional)</label>
+        <input type="file" id="refuelPhotoCamera" accept="image/*" capture="environment" style="display:none" onchange="onRefuelPhotoSelected(event)">
         <input type="file" id="refuelPhoto" accept="image/*" style="display:none" onchange="onRefuelPhotoSelected(event)">
-        <button type="button" class="full-w" onclick="document.getElementById('refuelPhoto').click()">📷 Anexar foto do cupom</button>
+        <div class="grid2">
+          <button type="button" onclick="document.getElementById('refuelPhotoCamera').click()">📷 Tirar foto</button>
+          <button type="button" onclick="document.getElementById('refuelPhoto').click()">🖼️ Da galeria</button>
+        </div>
         <div id="refuelPhotoPreview" style="margin-top:10px;"></div>
       </div>
       <button class="btn-primary full-w" onclick="addRefuel()">Adicionar abastecimento</button>
@@ -368,6 +372,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script>
 // ===== CONEXÃO COM O BANCO DE DADOS (SUPABASE) =====
 const SUPABASE_URL = 'https://pojfdvniqsggialenfca.supabase.co';
@@ -1631,9 +1636,10 @@ function saveRefuels() {
 }
 
 let pendingPhoto = null;
+let pendingReceiptCnpj = null;
 
 // Modelos conhecidos de cupom/NFC-e de combustível: cada um sabe reconhecer
-// seu próprio layout (por uma marca no texto) e extrair data, valor, litros e posto.
+// seu próprio layout (por uma marca no texto) e extrair data, valor e litros.
 // Para reconhecer um novo modelo de nota, basta adicionar um item aqui.
 const receiptTemplates = [
   {
@@ -1643,8 +1649,7 @@ const receiptTemplates = [
       return {
         value: matchNumber(text, /(?:VALOR A PAGAR|VALOR TOTAL)\s*R?\$?\s*([\d.,]+)/i),
         liters: matchNumber(text, /([\d]+[.,][\d]{2,3})\s*I?LT?\b/i),
-        date: matchDate(text, /Data de Autoriza[çc][ãa]o\s*-?\s*(\d{2}\/\d{2}\/\d{4})/i),
-        station: matchLine(text, /POSTO[^\n]*/i)
+        date: matchDate(text, /Data de Autoriza[çc][ãa]o\s*-?\s*(\d{2}\/\d{2}\/\d{4})/i)
       };
     }
   },
@@ -1655,19 +1660,21 @@ const receiptTemplates = [
       return {
         value: matchNumber(text, /VALOR TOTAL\s*R\$\s*([\d.,]+)/i),
         liters: matchNumber(text, /([\d]+[.,][\d]{2,3})\s*I?LT?\b/i),
-        date: matchDate(text, /Data de autoriza[çc][ãa]o:?\s*(\d{2}\/\d{2}\/\d{4})/i),
-        station: matchLine(text, /POSTO[^\n]*/i) || firstNonEmptyLine(text)
+        date: matchDate(text, /Data de autoriza[çc][ãa]o:?\s*(\d{2}\/\d{2}\/\d{4})/i)
       };
     }
   }
 ];
 
+// Marcas de posto comumente impressas no cabeçalho do cupom, usadas como
+// último recurso para achar o nome do posto sem "chutar" texto aleatório.
+const knownStationBrands = /POSTO|AUTO POSTO|SHELL|IPIRANGA|PETROBRAS|BR MANIA|RAIZEN|RA[IÍ]ZEN|ALE\s|VIBRA/i;
+
 function genericParseReceipt(text) {
   return {
     value: matchNumber(text, /(?:VALOR TOTAL|VALOR A PAGAR)\s*R?\$?\s*([\d.,]+)/i) || matchNumber(text, /R\$\s*([\d.,]+)/i),
     liters: matchNumber(text, /([\d]+[.,][\d]{2,3})\s*I?LT?\b/i),
-    date: matchDate(text, /Data de [Aa]utoriza[çc][ãa]o\s*:?\s*-?\s*(\d{2}\/\d{2}\/\d{4})/i) || matchDate(text, /(\d{2}\/\d{2}\/\d{4})/),
-    station: matchLine(text, /POSTO[^\n]*/i) || firstNonEmptyLine(text)
+    date: matchDate(text, /Data de [Aa]utoriza[çc][ãa]o\s*:?\s*-?\s*(\d{2}\/\d{2}\/\d{4})/i) || matchDate(text, /(\d{2}\/\d{2}\/\d{4})/)
   };
 }
 
@@ -1694,19 +1701,68 @@ function matchLine(text, regex) {
   return null;
 }
 
-function firstNonEmptyLine(text) {
-  const lines = text.split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
-  return lines.length ? lines[0] : null;
+// Só assume um nome de posto quando a linha bate com uma marca conhecida.
+// Evita preencher lixo de OCR (ruído de fundo da foto, teclado etc.) no campo.
+function matchStation(text) {
+  return matchLine(text, knownStationBrands);
+}
+
+// Um CNPJ formatado (00.000.000/0000-00) é fácil do OCR acertar, mesmo
+// quando o nome do posto (fonte decorativa) sai ilegível.
+function matchCnpjFromText(text) {
+  const m = text.match(/(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/);
+  return m ? m[1].replace(/\D/g, '') : null;
 }
 
 function parseReceiptText(text) {
+  let result = null;
   for (let i = 0; i < receiptTemplates.length; i++) {
-    if (receiptTemplates[i].match(text)) {
-      const r = receiptTemplates[i].parse(text);
-      if (r.date || r.value || r.liters) return r;
-    }
+    if (receiptTemplates[i].match(text)) { result = receiptTemplates[i].parse(text); break; }
   }
-  return genericParseReceipt(text);
+  const generic = genericParseReceipt(text);
+  return {
+    value: (result && result.value) || generic.value,
+    liters: (result && result.liters) || generic.liters,
+    date: (result && result.date) || generic.date,
+    station: matchStation(text),
+    cnpj: matchCnpjFromText(text)
+  };
+}
+
+// Memória de "posto por CNPJ": depois que o usuário confirma o nome de um
+// posto uma vez, o app passa a reconhecer o mesmo posto automaticamente
+// pelo CNPJ (do QR Code ou do texto), mesmo que o nome decorativo no cupom
+// saia ilegível para o OCR.
+function getStationDirectory() {
+  try { return JSON.parse(localStorage.getItem('stationDirectory') || '{}'); }
+  catch (e) { return {}; }
+}
+
+function rememberStation(cnpj, station) {
+  if (!cnpj || !station) return;
+  const dir = getStationDirectory();
+  dir[cnpj] = station;
+  try { localStorage.setItem('stationDirectory', JSON.stringify(dir)); } catch (e) {}
+}
+
+// Chave de acesso da NFC-e (44 dígitos, geralmente no texto do QR Code):
+// cUF(2) AAMM(4) CNPJ(14) mod(2) serie(3) nNF(9) tpEmis(1) cNF(8) cDV(1).
+function parseAccessKey(qrText) {
+  const m = (qrText || '').match(/\d{44}/);
+  if (!m) return null;
+  const key = m[0];
+  return { cnpj: key.slice(6, 20) };
+}
+
+function decodeQrFromCanvas(ctx, w, h) {
+  if (typeof jsQR === 'undefined') return null;
+  try {
+    const imageData = ctx.getImageData(0, 0, w, h);
+    const code = jsQR(imageData.data, w, h);
+    return code ? code.data : null;
+  } catch (e) {
+    return null;
+  }
 }
 
 let ocrWorkerPromise = null;
@@ -1722,7 +1778,32 @@ function getOcrWorker() {
   return ocrWorkerPromise;
 }
 
-async function runReceiptOCR(dataUrl) {
+// Monta uma versão em alta resolução e contraste realçado da foto, só para
+// a leitura (OCR/QR) — a foto pequena/comprimida usada para guardar o
+// comprovante fica ilegível demais para o Tesseract, especialmente em
+// cupom térmico apagado.
+function buildOcrCanvas(img) {
+  const maxDim = 1800;
+  let w = img.width, h = img.height;
+  if (w > h && w > maxDim) { h = h * maxDim / w; w = maxDim; }
+  else if (h > maxDim) { w = w * maxDim / h; h = maxDim; }
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0, w, h);
+
+  const imageData = ctx.getImageData(0, 0, w, h);
+  const px = imageData.data;
+  for (let i = 0; i < px.length; i += 4) {
+    const gray = px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114;
+    const enhanced = Math.max(0, Math.min(255, (gray - 128) * 1.6 + 128));
+    px[i] = px[i + 1] = px[i + 2] = enhanced;
+  }
+  ctx.putImageData(imageData, 0, 0);
+  return canvas;
+}
+
+async function runReceiptOCR(canvas) {
   const preview = document.getElementById('refuelPhotoPreview');
   if (typeof Tesseract === 'undefined') {
     const warn = document.createElement('div');
@@ -1737,19 +1818,31 @@ async function runReceiptOCR(dataUrl) {
   status.style.marginTop = '6px';
   status.textContent = 'Lendo dados do cupom...';
   preview.appendChild(status);
+  pendingReceiptCnpj = null;
 
   try {
+    // Lê o QR Code (chave de acesso -> CNPJ do emissor) em paralelo ao texto.
+    const qrText = decodeQrFromCanvas(canvas.getContext('2d'), canvas.width, canvas.height);
+    const accessKey = parseAccessKey(qrText);
+
     const worker = await getOcrWorker();
-    const result = await worker.recognize(dataUrl);
+    const result = await worker.recognize(canvas.toDataURL('image/png'));
     const text = (result.data && result.data.text) || '';
     const data = parseReceiptText(text);
+
+    const cnpj = (accessKey && accessKey.cnpj) || data.cnpj;
+    const stationDir = getStationDirectory();
+    const knownStation = cnpj && stationDir[cnpj];
+    const station = knownStation || data.station;
+    if (cnpj) pendingReceiptCnpj = cnpj;
+
     const found = [];
     if (data.date) { document.getElementById('refuelDate').value = data.date; found.push('data'); }
     if (data.value) { document.getElementById('refuelValue').value = data.value.toFixed(2); found.push('valor'); }
     if (data.liters) { document.getElementById('refuelLiters').value = data.liters.toFixed(2); found.push('litros'); }
-    if (data.station && !document.getElementById('refuelStation').value) {
-      document.getElementById('refuelStation').value = data.station;
-      found.push('posto');
+    if (station && !document.getElementById('refuelStation').value) {
+      document.getElementById('refuelStation').value = station;
+      found.push('posto' + (knownStation ? ' (lembrado)' : ''));
     }
     status.textContent = found.length
       ? 'Identificado no cupom: ' + found.join(', ') + '. Confira antes de salvar.'
@@ -1769,7 +1862,7 @@ function onRefuelPhotoSelected(event) {
   reader.onload = function(e) {
     const img = new Image();
     img.onload = function() {
-      // Redimensiona para no máx 1000px no maior lado e comprime em JPEG
+      // Redimensiona para no máx 1000px no maior lado e comprime em JPEG (guardar no histórico)
       const maxDim = 1000;
       let w = img.width, h = img.height;
       if (w > h && w > maxDim) { h = h * maxDim / w; w = maxDim; }
@@ -1782,7 +1875,7 @@ function onRefuelPhotoSelected(event) {
       const kb = Math.round(pendingPhoto.length * 0.75 / 1024);
       preview.innerHTML = '<img src="' + pendingPhoto + '" style="max-width:100%; border-radius:8px; border:1px solid var(--border-c);">' +
         '<div style="font-size:11px; color:var(--text-dim); margin-top:4px;">Foto anexada (~' + kb + ' KB). <span style="color:#ff6b6b; cursor:pointer;" onclick="clearPendingPhoto()">Remover</span></div>';
-      runReceiptOCR(pendingPhoto);
+      runReceiptOCR(buildOcrCanvas(img));
     };
     img.src = e.target.result;
   };
@@ -1792,6 +1885,7 @@ function onRefuelPhotoSelected(event) {
 
 function clearPendingPhoto() {
   pendingPhoto = null;
+  pendingReceiptCnpj = null;
   document.getElementById('refuelPhotoPreview').innerHTML = '';
 }
 
@@ -1822,6 +1916,9 @@ async function addRefuel() {
   if (!date) { showMessage('Escolha a data do abastecimento.', 'error'); return; }
   if (isNaN(value) || value <= 0) { showMessage('Digite o valor pago.', 'error'); return; }
   if (isNaN(liters) || liters <= 0) { showMessage('Digite a quantidade de litros.', 'error'); return; }
+
+  // Aprende o nome do posto para esse CNPJ, pra reconhecer automaticamente da próxima vez.
+  if (pendingReceiptCnpj && station) rememberStation(pendingReceiptCnpj, station);
 
   // Se tem foto, sobe para a nuvem primeiro e usa a URL
   let photoUrl = pendingPhoto;
