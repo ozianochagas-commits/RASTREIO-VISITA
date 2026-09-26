@@ -213,7 +213,7 @@ td input.cidade{min-width:118px}
           </tr>
           <tr>
             <th>Cliente</th><th>UF</th><th>Cidade</th><th>Data do Pedido</th>
-            <th>Nota Fiscal</th><th>Faturamento</th><th>Prazo (dias)</th><th>Previsão</th>
+            <th>Nota Fiscal</th><th>Faturamento</th><th>Prazo Região (dias)</th><th>Previsão</th>
             <th>Entrega real</th><th>Situação</th><th>Plano de negócio</th><th>Observações</th>
             <th></th>
           </tr>
@@ -676,7 +676,7 @@ td input.cidade{min-width:118px}
   // ---------- export ----------
   function doExport(){
     var head = ['Cliente','UF','Cidade','Data do Pedido','Nota Fiscal','Data Faturamento','Dias Pedido→Faturamento',
-      'Prazo (dias)','Previsão de Entrega','Data Entrega Real','Situação','Dias (atraso/adiantamento)',
+      'Prazo Região (dias)','Previsão de Entrega','Data Entrega Real','Situação','Dias (atraso/adiantamento)',
       'Observações','Tem Plano','Grupo do Plano','Meta Trimestre (R$)','% Meta Atingida'];
     var lines = [head.join(';')];
     STATE.rows.forEach(function(r){
@@ -732,7 +732,7 @@ td input.cidade{min-width:118px}
       doc.text(item.label, x+12, boxY+34, {maxWidth:boxW-16});
     });
 
-    var head = [['Cliente','UF','Cidade','NF','Faturamento','Prazo','Previsão','Entrega','Situação','Observações']];
+    var head = [['Cliente','UF','Cidade','NF','Faturamento','Prazo Região','Previsão','Entrega','Situação','Observações']];
     var body = STATE.rows.map(function(r){
       var c = computeRow(r);
       return [r.cliente||'', r.uf||'', r.cidade||'', r.nf||'', fmtBR(r.dataFat), (c.prazo!=null?String(c.prazo):''),
