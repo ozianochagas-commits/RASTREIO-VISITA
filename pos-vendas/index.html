@@ -449,7 +449,7 @@ td input.cidade{min-width:118px}
     var c = computeRow(r);
     var prazoPh = (c.prazo!=null) ? c.prazo : '?';
     return '<tr data-id="'+r.id+'">'+
-      '<td><input data-f="cliente" data-id="'+r.id+'" value="'+escAttr(r.cliente)+'" title="'+escAttr(r.cliente)+'" style="min-width:15cm;font-weight:600"></td>'+
+      '<td><input data-f="cliente" data-id="'+r.id+'" value="'+escAttr(r.cliente)+'" title="'+escAttr(r.cliente)+'" style="min-width:200px;font-weight:600"</td>'+
       '<td><input class="uf" data-f="uf" data-id="'+r.id+'" value="'+escAttr(r.uf)+'" maxlength="2"></td>'+
       '<td><input class="cidade" data-f="cidade" data-id="'+r.id+'" value="'+escAttr(r.cidade)+'" placeholder="opcional"></td>'+
       '<td><input class="date" type="date" data-f="dataPedido" data-id="'+r.id+'" value="'+escAttr(r.dataPedido||'')+'"></td>'+
