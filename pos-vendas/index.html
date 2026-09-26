@@ -1,5 +1,15 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Gestão de Pós-Vendas</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap"><script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script><script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script><script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><style id="app-style">
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Gestão de Pós-Vendas</title>
+<meta name="theme-color" content="#f2600a">
+<meta name="color-scheme" content="light dark">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pós-Vendas">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap"><script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script><script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script><script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><style id="app-style">
 :root{
   --bg:#faf7f2;--surface:#ffffff;--surface-2:#f5efe6;--border:#e8dfd2;
   --text:#241d15;--text-muted:#7d715f;--accent:#f2600a;--accent-weak:#ffe0bf;
@@ -27,7 +37,10 @@
     --relevant:#ff9c4d;--relevant-weak:#3f2410;--brand-bar:#000000;
 }
 *{box-sizing:border-box}
-body{background:var(--bg);color:var(--text);font-family:"IBM Plex Sans",system-ui,sans-serif;padding:0 16px 48px;padding-block:0 48px}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--bg);color:var(--text);font-family:"IBM Plex Sans",system-ui,sans-serif;
+  padding:0 max(16px,env(safe-area-inset-right)) max(48px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));
+  padding-block:0 48px}
 .brandstripe{height:26px;margin:0 -16px 20px;background:var(--brand-bar);border-bottom:3px solid var(--accent)}
 .wrap{max-width:1400px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
 h1{font-family:"Manrope",system-ui,sans-serif;font-weight:700;font-size:1.5rem;margin:0;letter-spacing:-.01em}
@@ -76,7 +89,7 @@ h1{font-family:"Manrope",system-ui,sans-serif;font-weight:700;font-size:1.5rem;m
 .count-note{font-size:.75rem;color:var(--text-muted);margin-left:auto}
 .switch-label{display:inline-flex;align-items:center;gap:6px;font-size:.8rem;color:var(--text);cursor:pointer;white-space:nowrap;user-select:none}
 .switch-label input{width:15px;height:15px;accent-color:var(--accent);cursor:pointer}
-.table-scroll{overflow:auto;max-height:64vh;border-top:1px solid var(--border);scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+.table-scroll{overflow:auto;-webkit-overflow-scrolling:touch;max-height:64vh;border-top:1px solid var(--border);scrollbar-width:thin;scrollbar-color:var(--border) transparent}
 .table-scroll::-webkit-scrollbar{height:8px;width:8px}
 .table-scroll::-webkit-scrollbar-track{background:transparent}
 .table-scroll::-webkit-scrollbar-thumb{background:var(--border);border-radius:8px}
@@ -129,7 +142,28 @@ td input.cidade{min-width:118px}
 .ranking-table td.rk-cliente{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ranking-table td.rk-num{font-family:"IBM Plex Mono",monospace;text-align:right}
 .ranking-empty{padding:24px 8px;color:var(--text-muted);text-align:center}
-@media(max-width:700px){.topbar{flex-direction:column}.filters{flex-direction:column;align-items:stretch}.count-note{margin-left:0}}
+@media(max-width:700px){
+  .topbar{flex-direction:column}
+  .filters{flex-direction:column;align-items:stretch}
+  .count-note{margin-left:0}
+  /* 16px evita o zoom automático do iOS ao tocar num campo */
+  .filters select,.filters input,td input,td select,td textarea{font-size:16px}
+  .modal-overlay{padding:12px}
+  .modal-box{max-height:90vh}
+  .table-scroll{max-height:70vh}
+}
+@media(max-width:480px){
+  body{padding-left:max(10px,env(safe-area-inset-left));padding-right:max(10px,env(safe-area-inset-right))}
+  .brandstripe{margin:0 -10px 16px}
+  h1{font-size:1.2rem}
+  .kpis{grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px}
+  .kpi{padding:10px 12px}
+  .kpi .n{font-size:1.4rem}
+  .panel-body{padding:12px 10px}
+  .filters{padding:10px 12px}
+  .btn{padding:8px 12px}
+  .modal-head,.modal-body{padding-left:12px;padding-right:12px}
+}
 .toastbox{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:8px 16px;border-radius:8px;font-size:.8rem;opacity:0;transition:opacity .25s;pointer-events:none;z-index:50}</style></head><body><div id="appRoot">
 <div class="brandstripe"></div>
 <div class="wrap">
