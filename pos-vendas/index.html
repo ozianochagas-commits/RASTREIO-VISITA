@@ -213,7 +213,7 @@ td input.cidade{min-width:118px}
           </tr>
           <tr>
             <th>Cliente</th><th>UF</th><th>Cidade</th><th>Data do Pedido</th>
-            <th>Nota Fiscal</th><th>Faturamento</th><th>Prazo Região (dias)</th><th>Previsão</th>
+            <th>Nota Fiscal</th><th>Faturamento</th><th>Prazo Região<br>(dias)</th><th>Previsão</th>
             <th>Entrega real</th><th>Situação</th><th>Plano de negócio</th><th>Observações</th>
             <th></th>
           </tr>
@@ -460,7 +460,7 @@ td input.cidade{min-width:118px}
       '<td><div class="datewrap"><input class="date" type="date" data-f="dataFat" data-id="'+r.id+'" value="'+escAttr(r.dataFat||'')+'">'+
         (c.pedFatTxt?'<span class="sub">'+escHtml(c.pedFatTxt)+'</span>':'')+
         '</div></td>'+
-      '<td><input type="number" min="0" style="width:52px" data-f="prazoManual" data-id="'+r.id+'" value="'+escAttr(r.prazoManual||'')+'" placeholder="'+prazoPh+'"></td>'+
+      '<td><input type="number" min="0" style="width:52px;text-align:center" data-f="prazoManual" data-id="'+r.id+'" value="'+escAttr(r.prazoManual||'')+'" placeholder="'+prazoPh+'"></td>'+
       '<td style="font-family:\'IBM Plex Mono\',monospace;font-size:.75rem;white-space:nowrap">'+(c.previsao?fmtBR(c.previsao):'—')+'</td>'+
       '<td><input class="date" type="date" data-f="dataEntrega" data-id="'+r.id+'" value="'+escAttr(r.dataEntrega||'')+'"></td>'+
       '<td><span class="tag '+c.situacaoTone+'">'+escHtml(c.situacao)+'</span><span class="dias">'+escHtml(c.diasTxt)+'</span></td>'+
