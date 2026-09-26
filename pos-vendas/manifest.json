@@ -1,7 +1,7 @@
 {
-  "name": "Gestão de Pós-Vendas",
-  "short_name": "Pós-Vendas",
-  "description": "Rastreio de pedidos, faturamento e entregas — Norte/Nordeste",
+  "name": "Gestão Pós-Venda",
+  "short_name": "Pós-Venda",
+  "description": "Rastreio de pedidos, faturamento e entregas",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

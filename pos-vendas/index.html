@@ -1,5 +1,5 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Gestão de Pós-Vendas</title>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Gestão Pós-Venda</title>
 <meta name="theme-color" content="#f2600a">
 <meta name="color-scheme" content="light dark">
 <link rel="manifest" href="manifest.json">
@@ -8,7 +8,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Pós-Vendas">
+<meta name="apple-mobile-web-app-title" content="Pós-Venda">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap"><script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script><script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script><script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><style id="app-style">
 :root{
   --bg:#faf7f2;--surface:#ffffff;--surface-2:#f5efe6;--border:#e8dfd2;
@@ -169,7 +169,7 @@ td input.cidade{min-width:118px}
 <div class="wrap">
   <div class="topbar">
     <div>
-      <h1>Gestão de Pós-Vendas — Norte/Nordeste</h1>
+      <h1>Gestão Pós-Venda</h1>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
       <input type="file" id="importFile" accept=".xlsx,.xls,.csv" hidden="">
@@ -224,7 +224,7 @@ td input.cidade{min-width:118px}
     <div class="addrow"><button class="btn" id="addRowBtn">+ Adicionar pedido</button></div>
   </div>
 
-  <div class="notes">
+  <div class="notes" hidden>
     <b>Como funciona:</b> o prazo é preenchido automaticamente pela tabela de referência (UF + cidade da transportadora); quando a cidade não é informada, é usado o prazo médio da UF — preencha a cidade para o valor exato, ou digite um prazo manual na coluna "Prazo (dias)". A previsão de entrega é a data de faturamento + prazo, contando em dias úteis (pula sábado e domingo) por padrão — desmarque "Dias úteis" no filtro para contar em dias corridos. A situação compara a previsão com a data real informada (ou com hoje, se ainda não entregue); a partir de 1 dia de atraso o status já aparece em vermelho (Atrasado), ficando mais forte acima de 2 dias — essa contagem de atraso só começa depois que o pedido é faturado. Enquanto não houver data de faturamento, o pedido fica com a etiqueta laranja "Aguardando faturamento", mostrando há quantos dias está parado sem nota fiscal (some sozinha assim que a coluna "Faturamento" for preenchida); esse total também aparece no card "Aguardando faturamento" no topo, quando houver algum. Depois de faturado, a coluna "Data do Pedido" mostra abaixo do campo "Faturamento" quantos dias levou para faturar. A etiqueta roxa "Plano 3º Tri" é apenas um lembrete visual — aparece nos clientes com plano ativo no 3º trimestre, mostrando o % da meta já atingido (passe o mouse para ver o grupo e a meta em R$); vem pronta da planilha de acompanhamento, não precisa preencher nada. Use "Importar dados" para atualizar a tabela direto da planilha de rastreamento (colunas Código, Cliente, Estado, Data do Pedido, Data do Faturamento, Nº Nota Fiscal, Status Mercadoria) — a importação substitui todos os pedidos atuais pelos do arquivo enviado.
   </div>
 
@@ -706,7 +706,7 @@ td input.cidade{min-width:118px}
     doc.rect(0,10,pageWidth,3,'F');
 
     doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(36,29,21);
-    doc.text('Gestão de Pós-Vendas — Norte/Nordeste', ML, 38);
+    doc.text('Gestão Pós-Venda', ML, 38);
     doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(125,113,95);
     doc.text('Gerado em '+fmtBR(todayISO())+' · '+STATE.rows.length+' pedidos rastreados', ML, 51);
 
