@@ -100,9 +100,9 @@ thead th{background:var(--accent);text-align:left;font-size:.68rem;text-transfor
 thead tr.group th{background:var(--surface);font-size:.66rem;color:var(--text-muted);border-bottom:none;padding-top:8px;text-transform:uppercase;letter-spacing:.03em}
 thead tr.group th+th{border-left:1px solid var(--border)}
 thead tr:not(.group) th{position:sticky;top:0;z-index:2}
-tbody td{padding:5px 6px;border-bottom:1px solid var(--border);vertical-align:middle}
+tbody td{padding:5px 3px;border-bottom:1px solid var(--border);vertical-align:middle}
 tbody tr:hover{background:var(--surface-2)}
-td input,td select,td textarea{font:inherit;font-size:.76rem;width:100%;min-width:60px;padding:4px 5px;border-radius:6px;
+td input,td select,td textarea{font:inherit;font-size:.76rem;width:100%;min-width:60px;padding:4px 3px;border-radius:6px;
   border:1px solid rgba(0,0,0,0);background:transparent;color:var(--text)}
 td input:hover,td select:hover,td textarea:hover{border-color:var(--border)}
 td input:focus,td select:focus,td textarea:focus{border-color:var(--accent);background:var(--surface);outline:none}
@@ -449,7 +449,7 @@ td input.cidade{min-width:118px}
     var c = computeRow(r);
     var prazoPh = (c.prazo!=null) ? c.prazo : '?';
     return '<tr data-id="'+r.id+'">'+
-      '<td><input data-f="cliente" data-id="'+r.id+'" value="'+escAttr(r.cliente)+'" title="'+escAttr(r.cliente)+'" style="min-width:200px;font-weight:600"</td>'+
+      '<td><input data-f="cliente" data-id="'+r.id+'" value="'+escAttr(r.cliente)+'" title="'+escAttr(r.cliente)+'" style="min-width:130px;font-weight:600"></td>'+
       '<td><input class="uf" data-f="uf" data-id="'+r.id+'" value="'+escAttr(r.uf)+'" maxlength="2"></td>'+
       '<td><input class="cidade" data-f="cidade" data-id="'+r.id+'" value="'+escAttr(r.cidade)+'" placeholder="opcional"></td>'+
       '<td><input class="date" type="date" data-f="dataPedido" data-id="'+r.id+'" value="'+escAttr(r.dataPedido||'')+'"></td>'+
