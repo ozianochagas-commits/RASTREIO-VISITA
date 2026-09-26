@@ -97,7 +97,8 @@ h1{font-family:"Manrope",system-ui,sans-serif;font-weight:700;font-size:1.5rem;m
 .table-scroll table{border-collapse:collapse;width:100%;min-width:1520px;font-size:.8rem}
 thead th{background:var(--accent);text-align:left;font-size:.68rem;text-transform:uppercase;
   letter-spacing:.03em;color:#fff;padding:7px 6px;border-bottom:1px solid var(--border);white-space:nowrap}
-thead tr.group th{background:var(--surface);font-size:.66rem;color:var(--text-muted);border-bottom:none;padding-top:8px}
+thead tr.group th{background:var(--surface);font-size:.66rem;color:var(--text-muted);border-bottom:none;padding-top:8px;text-transform:uppercase;letter-spacing:.03em}
+thead tr.group th+th{border-left:1px solid var(--border)}
 thead tr:not(.group) th{position:sticky;top:0;z-index:2}
 tbody td{padding:5px 6px;border-bottom:1px solid var(--border);vertical-align:middle}
 tbody tr:hover{background:var(--surface-2)}
@@ -208,7 +209,10 @@ td input.cidade{min-width:118px}
       <table>
         <thead>
           <tr class="group">
-            <th colspan="12">Rastreio da entrega</th>
+            <th colspan="3">Cliente</th>
+            <th colspan="3">Pedido</th>
+            <th colspan="4">Prazo e entrega</th>
+            <th colspan="2">Outros</th>
             <th></th>
           </tr>
           <tr>
