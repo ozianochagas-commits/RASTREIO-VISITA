@@ -151,6 +151,18 @@
   </div>
 </div>
 
+<div id="sessaoTipoModal" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span>Antes de sair...</span>
+      <button class="modal-close" onclick="fecharEscolhaSessao()" aria-label="Fechar">✕</button>
+    </div>
+    <p class="hint" style="margin-top:0;">Essa saída de carro é a trabalho ou pessoal? Isso ajuda a separar a km de cada um no relatório.</p>
+    <button class="btn-primary full-w" style="margin-bottom:8px;" onclick="escolherTipoSessao('trabalho')">💼 Trabalho</button>
+    <button class="full-w" onclick="escolherTipoSessao('pessoal')">🏠 Pessoal</button>
+  </div>
+</div>
+
 <div class="container">
   <div class="header">
     <div class="logo-wrap">
@@ -178,6 +190,8 @@
   </div>
 
   <div id="registro" class="tab-content active">
+    <div id="sessaoAtualBox"></div>
+
     <div class="status-card">
       <div class="status-label">Último local salvo</div>
       <div class="status-value" id="lastLocationLabel" style="font-size: 14px;">Nenhum ainda — a próxima visita começa do zero</div>
@@ -476,6 +490,7 @@ async function loadFromCloud() {
 
     updateLastLocationLabel();
     renderVisitsList();
+    renderSessaoAtual();
     showMessage(state.visits.length + ' visita(s) e ' + state.refuels.length + ' abastecimento(s) carregados da nuvem.');
   } catch (e) {
     showMessage('Erro ao carregar da nuvem: ' + e.message, 'error');
@@ -672,7 +687,7 @@ function switchTab(tab) {
   if (tab === 'periodo') renderPeriodView();
   if (tab === 'combustivel') renderFuelView();
   if (tab === 'linha') renderTimelineReport();
-  if (tab === 'registro') updateLastLocationLabel();
+  if (tab === 'registro') { updateLastLocationLabel(); renderSessaoAtual(); }
 }
 
 function getRoadFactor() {
@@ -1023,7 +1038,7 @@ function registerVisit() {
     document.getElementById('addressValue').textContent = 'Toque em "Solicitar localização" para detectar o endereço';
     selectedFromSearch = null;
 
-    showMessage('✓ Visita registrada em ' + finalName + ' às ' + submitTime.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'}) + '! Distância desde o último local: ' + distance.toFixed(2) + ' km');
+    showMessage('✓ Visita registrada em ' + finalName + ' às ' + submitTime.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'}) + '! Distância desde o último local: ' + newVisit.distance.toFixed(2) + ' km');
 
     btn.disabled = false;
     btn.textContent = '✓ Registrado com sucesso!';
@@ -1074,8 +1089,175 @@ function resetChain() {
     state.lastLocation = null;
     saveState();
     updateLastLocationLabel();
+    renderSessaoAtual();
     showMessage('Cadeia reiniciada. A próxima visita será o novo ponto de partida.');
   }
+}
+
+// ===== SAÍDA DO DIA: separar km de TRABALHO x PESSOAL =====
+// Não usa tabela nova nenhuma: cada início/fim de saída é salvo como uma
+// "visita" comum (mesma tabela `visitas` de sempre), só com um nome-marcador
+// (🚩/🏁/🏠). Assim nada muda no banco e nada precisa ser migrado.
+
+function isMarcoInicio(v) {
+  return !!v.locationName && v.locationName.indexOf('Início') !== -1 && (v.locationName.indexOf('🚩') === 0 || v.locationName.indexOf('🏠') === 0);
+}
+function isMarcoFim(v) {
+  return !!v.locationName && v.locationName.indexOf('Fim') !== -1 && (v.locationName.indexOf('🏁') === 0 || v.locationName.indexOf('🏠') === 0);
+}
+function isPessoalVisit(v) {
+  return !!v.locationName && v.locationName.indexOf('🏠') === 0;
+}
+
+function getSessaoAtual() {
+  const marcos = state.visits.filter(function(v) { return isMarcoInicio(v) || isMarcoFim(v); })
+    .sort(function(a, b) { return new Date(a.dateTime) - new Date(b.dateTime); });
+  if (marcos.length === 0) return null;
+  const ultimo = marcos[marcos.length - 1];
+  if (isMarcoFim(ultimo)) return null; // última coisa que aconteceu foi um "Fim" -> nenhuma saída em andamento
+  return { tipo: isPessoalVisit(ultimo) ? 'pessoal' : 'trabalho', inicio: ultimo };
+}
+
+function kmEntreDatas(t0, t1) {
+  const doPeriodo = state.visits.filter(function(v) {
+    const t = new Date(v.dateTime).getTime();
+    return t >= t0 && t <= t1;
+  });
+  const km = doPeriodo.reduce(function(s, v) { return s + (v.distance || 0); }, 0);
+  return { km: km, paradas: Math.max(0, doPeriodo.length - 1) };
+}
+
+function renderSessaoAtual() {
+  const box = document.getElementById('sessaoAtualBox');
+  if (!box) return;
+  const sessao = getSessaoAtual();
+  if (!sessao) {
+    box.innerHTML =
+      '<div class="status-card">' +
+        '<div class="status-label">🚗 Minha saída</div>' +
+        '<div class="status-value" style="font-size:13px; margin-bottom:10px; font-weight:400;">Nenhuma saída em andamento. Toque abaixo antes de pegar o carro.</div>' +
+        '<button class="btn-primary full-w" id="btnIniciarSessao" onclick="abrirEscolhaSessao()">▶ Iniciar saída</button>' +
+      '</div>';
+    return;
+  }
+  const t0 = new Date(sessao.inicio.dateTime).getTime();
+  const resumo = kmEntreDatas(t0, Date.now());
+  const horaIni = new Date(sessao.inicio.dateTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const ehPessoal = sessao.tipo === 'pessoal';
+  box.innerHTML =
+    '<div class="status-card" style="border-color:' + (ehPessoal ? 'var(--text-dim)' : 'var(--orange)') + ';">' +
+      '<div class="status-label">' + (ehPessoal ? '🏠 Saída pessoal em andamento' : '💼 Dia de trabalho em andamento') + '</div>' +
+      '<div class="status-value" style="font-size:14px;">Desde ' + horaIni + '</div>' +
+      '<div style="font-size:13px; color:var(--text-dim); margin:4px 0 10px;">' + resumo.km.toFixed(2) + ' km até agora · ' + resumo.paradas + ' parada(s)</div>' +
+      '<button class="btn-primary full-w" id="btnFinalizarSessao" onclick="finalizarSessao()">⏹ Finalizar ' + (ehPessoal ? 'saída pessoal' : 'dia de trabalho') + '</button>' +
+    '</div>';
+}
+
+function abrirEscolhaSessao() {
+  document.getElementById('sessaoTipoModal').classList.add('open');
+}
+function fecharEscolhaSessao() {
+  document.getElementById('sessaoTipoModal').classList.remove('open');
+}
+function escolherTipoSessao(tipo) {
+  fecharEscolhaSessao();
+  iniciarSessao(tipo);
+}
+
+function iniciarSessao(tipo) {
+  const btn = document.getElementById('btnIniciarSessao');
+  if (btn) { btn.disabled = true; btn.textContent = 'Detectando local...'; }
+
+  function finish(lat, lng, nomeDetectado) {
+    const submitTime = new Date();
+    const base = tipo === 'pessoal' ? '🏠 Início (pessoal)' : '🚩 Início do dia (trabalho)';
+    const nome = base + (nomeDetectado ? ' — ' + nomeDetectado : '');
+    const newVisit = {
+      dateTime: submitTime.toISOString(),
+      locationName: nome,
+      fromLocationName: 'Ponto de partida',
+      lat: lat, lng: lng,
+      fromLat: null, fromLng: null,
+      distanceStraight: 0,
+      distance: 0,
+      notes: ''
+    };
+    state.visits.push(newVisit);
+    state.lastLocation = { lat: lat, lng: lng, name: nome };
+    saveState();
+    updateLastLocationLabel();
+    renderVisitsList();
+    renderSessaoAtual();
+    cloudSaveVisit(newVisit).then(function(id) { if (id) { newVisit.id = id; saveState(); } });
+    showMessage((tipo === 'pessoal' ? '🏠 Saída pessoal iniciada' : '🚩 Dia de trabalho iniciado') + ' às ' + submitTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) + '!');
+  }
+
+  if (selectedFromSearch) { const s = selectedFromSearch; selectedFromSearch = null; finish(s.lat, s.lng, s.name); return; }
+  if (lastKnownPosition) { const p = lastKnownPosition; lastKnownPosition = null; finish(p.coords.latitude, p.coords.longitude, null); return; }
+  if (!checkGeoSupport()) { if (btn) { btn.disabled = false; btn.textContent = '▶ Iniciar saída'; } return; }
+  navigator.geolocation.getCurrentPosition(
+    function(pos) { finish(pos.coords.latitude, pos.coords.longitude, null); },
+    function(err) {
+      let msg = 'GPS indisponível. Toque em "🔍 Buscar / selecionar endereço" e depois em "Iniciar saída" de novo.';
+      if (err.code === 1) msg = 'Permissão de GPS negada. Toque em "🔍 Buscar / selecionar endereço" e depois em "Iniciar saída" de novo.';
+      showMessage(msg, 'error');
+      if (btn) { btn.disabled = false; btn.textContent = '▶ Iniciar saída'; }
+    },
+    { enableHighAccuracy: true, timeout: 15000 }
+  );
+}
+
+function finalizarSessao() {
+  const sessao = getSessaoAtual();
+  if (!sessao) { showMessage('Nenhuma saída em andamento para finalizar.', 'error'); return; }
+  const btn = document.getElementById('btnFinalizarSessao');
+  if (btn) { btn.disabled = true; btn.textContent = 'Detectando local...'; }
+
+  function finish(lat, lng, nomeDetectado) {
+    const submitTime = new Date();
+    let distanceStraight = 0, fromLocationName = 'Ponto de partida', fromLat = null, fromLng = null;
+    if (state.lastLocation) {
+      distanceStraight = haversineStraight(state.lastLocation.lat, state.lastLocation.lng, lat, lng);
+      fromLocationName = state.lastLocation.name; fromLat = state.lastLocation.lat; fromLng = state.lastLocation.lng;
+    }
+    const base = sessao.tipo === 'pessoal' ? '🏠 Fim (pessoal)' : '🏁 Fim do dia (trabalho)';
+    const nome = base + (nomeDetectado ? ' — ' + nomeDetectado : '');
+    const newVisit = {
+      dateTime: submitTime.toISOString(),
+      locationName: nome,
+      fromLocationName: fromLocationName,
+      lat: lat, lng: lng, fromLat: fromLat, fromLng: fromLng,
+      distanceStraight: distanceStraight,
+      distance: distanceStraight * getRoadFactor(),
+      notes: ''
+    };
+    state.visits.push(newVisit);
+    state.lastLocation = { lat: lat, lng: lng, name: nome };
+    saveState();
+    updateLastLocationLabel();
+    renderVisitsList();
+    cloudSaveVisit(newVisit).then(function(id) { if (id) { newVisit.id = id; saveState(); } });
+
+    const t0 = new Date(sessao.inicio.dateTime).getTime();
+    const t1 = new Date(newVisit.dateTime).getTime();
+    const resumo = kmEntreDatas(t0, t1);
+    renderSessaoAtual();
+    showMessage('✓ ' + (sessao.tipo === 'pessoal' ? 'Saída pessoal finalizada' : 'Dia de trabalho finalizado') + '! ' + resumo.km.toFixed(2) + ' km em ' + resumo.paradas + ' parada(s).');
+  }
+
+  if (selectedFromSearch) { const s = selectedFromSearch; selectedFromSearch = null; finish(s.lat, s.lng, s.name); return; }
+  if (lastKnownPosition) { const p = lastKnownPosition; lastKnownPosition = null; finish(p.coords.latitude, p.coords.longitude, null); return; }
+  if (!checkGeoSupport()) { if (btn) { btn.disabled = false; btn.textContent = '⏹ Finalizar'; } return; }
+  navigator.geolocation.getCurrentPosition(
+    function(pos) { finish(pos.coords.latitude, pos.coords.longitude, null); },
+    function(err) {
+      let msg = 'GPS indisponível. Toque em "🔍 Buscar / selecionar endereço" e depois em "Finalizar" de novo.';
+      if (err.code === 1) msg = 'Permissão de GPS negada. Toque em "🔍 Buscar / selecionar endereço" e depois em "Finalizar" de novo.';
+      showMessage(msg, 'error');
+      if (btn) { btn.disabled = false; btn.textContent = '⏹ Finalizar'; }
+    },
+    { enableHighAccuracy: true, timeout: 15000 }
+  );
 }
 
 let showAllVisits = false;
@@ -1200,6 +1382,7 @@ function deleteVisit(idx) {
     state.selectedVisits.delete(idx);
     saveState();
     renderVisitsList();
+    renderSessaoAtual();
     if (removed) cloudDeleteVisit(removed.id, removed.dateTime, removed.locationName);
     showMessage('Visita deletada.');
   }
@@ -2149,6 +2332,10 @@ function renderTimelineReport() {
   const totalKm = dates.reduce(function(sum, d) {
     return sum + byDate[d].visits.reduce(function(s, v) { return s + (v.distance || 0); }, 0);
   }, 0);
+  const totalKmTrabalho = dates.reduce(function(sum, d) {
+    return sum + byDate[d].visits.filter(function(v) { return !isPessoalVisit(v); }).reduce(function(s, v) { return s + (v.distance || 0); }, 0);
+  }, 0);
+  const totalKmPessoal = totalKm - totalKmTrabalho;
   const refuelInPeriod = getRefuelPeriodData(from, to);
   const fuelStatus = getFuelValidationStatus(totalKm, refuelInPeriod);
   summaryBox.innerHTML =
@@ -2164,6 +2351,7 @@ function renderTimelineReport() {
     '<div style="font-size:13px;">Período analisado</div>' +
     '<div class="summary-value">' + dates.length + ' dia(s)</div>' +
     '<div style="font-size:12px;">' + totalKm.toFixed(2) + ' km rodados · ' + refuelInPeriod.count + ' abastecimento(s) · R$ ' + refuelInPeriod.totalValue.toFixed(2) + '</div>' +
+    '<div style="font-size:12px; margin-top:2px;">💼 ' + totalKmTrabalho.toFixed(2) + ' km trabalho' + (totalKmPessoal > 0 ? ' · 🏠 ' + totalKmPessoal.toFixed(2) + ' km pessoal' : '') + '</div>' +
     '</div>' +
     (refuelInPeriod.count === 0
       ? '<div class="filter-group" style="margin-top:12px; border-color:var(--orange);">' +
@@ -2189,12 +2377,14 @@ function renderTimelineReport() {
 
 function timelineDayCardHtml(d, day) {
   const sortedVisits = day.visits.slice().sort(function(a, b) { return new Date(a.dateTime) - new Date(b.dateTime); });
-  const dayKm = sortedVisits.reduce(function(s, v) { return s + (v.distance || 0); }, 0);
+  const kmTrabalho = sortedVisits.filter(function(v) { return !isPessoalVisit(v); }).reduce(function(s, v) { return s + (v.distance || 0); }, 0);
+  const kmPessoal = sortedVisits.filter(isPessoalVisit).reduce(function(s, v) { return s + (v.distance || 0); }, 0);
 
   const placesHtml = sortedVisits.length > 0
     ? sortedVisits.map(function(v) {
         const time = new Date(v.dateTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-        return '<div class="visit-location">' + time + ' — ' + v.locationName + ' <span style="color:var(--text-dim); font-size:11px;">(' + (v.distance || 0).toFixed(2) + ' km)</span></div>';
+        const destaque = (isMarcoInicio(v) || isMarcoFim(v)) ? 'font-weight:600;' : '';
+        return '<div class="visit-location" style="' + destaque + '">' + time + ' — ' + v.locationName + ' <span style="color:var(--text-dim); font-size:11px;">(' + (v.distance || 0).toFixed(2) + ' km)</span></div>';
       }).join('')
     : '<div class="visit-location" style="font-size:11px; color:var(--text-dim);">Nenhuma visita registrada nesse dia</div>';
 
@@ -2207,7 +2397,9 @@ function timelineDayCardHtml(d, day) {
   return '<div class="visit-card">' +
     '<div class="visit-date">' + new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') + '</div>' +
     placesHtml +
-    (dayKm > 0 ? '<div class="visit-km">' + dayKm.toFixed(2) + ' km no dia</div>' : '') +
+    (kmTrabalho > 0 || kmPessoal > 0
+      ? '<div class="visit-km">💼 ' + kmTrabalho.toFixed(2) + ' km trabalho' + (kmPessoal > 0 ? ' · 🏠 ' + kmPessoal.toFixed(2) + ' km pessoal' : '') + '</div>'
+      : '') +
     refuelHtml +
     '</div>';
 }
@@ -2321,7 +2513,7 @@ function generateTimelineExcel() {
     return;
   }
 
-  const rows = [['Data', 'Hora', 'Local visitado', 'Km da visita', 'Total km no dia', 'Abastecimento (posto)', 'Valor pago (R$)', 'Litros']];
+  const rows = [['Data', 'Hora', 'Local visitado', 'Categoria', 'Km da visita', 'Total km trabalho no dia', 'Total km pessoal no dia', 'Abastecimento (posto)', 'Valor pago (R$)', 'Litros']];
 
   const totalKmPeriod = dates.reduce(function(sum, d) {
     return sum + byDate[d].visits.reduce(function(s, v) { return s + (v.distance || 0); }, 0);
@@ -2329,28 +2521,30 @@ function generateTimelineExcel() {
   const refuelInPeriod = getRefuelPeriodData(from, to);
   const fuelStatus = getFuelValidationStatus(totalKmPeriod, refuelInPeriod);
   if (fuelStatus) {
-    rows.push(['TOTAL KM PERCORRIDO', fuelStatus.kmPercorrido.toFixed(2).replace('.', ','), '', '', '', '', '', '']);
-    rows.push(['TOTAL NECESSARIO LITROS', fuelStatus.litrosNecessarios.toFixed(2).replace('.', ','), '', '', '', '', '', '']);
-    rows.push(['TOTAL LITROS ABASTECIDO', fuelStatus.litrosAbastecido.toFixed(2).replace('.', ','), '', '', '', '', '', '']);
-    rows.push(['VALIDADO OU NÃO VALIDADO', fuelStatus.ok ? 'VALIDADO' : 'NÃO VALIDADO', '', '', '', '', '', '']);
-    rows.push(['', '', '', '', '', '', '', '']);
+    rows.push(['TOTAL KM PERCORRIDO', fuelStatus.kmPercorrido.toFixed(2).replace('.', ','), '', '', '', '', '', '', '', '']);
+    rows.push(['TOTAL NECESSARIO LITROS', fuelStatus.litrosNecessarios.toFixed(2).replace('.', ','), '', '', '', '', '', '', '', '']);
+    rows.push(['TOTAL LITROS ABASTECIDO', fuelStatus.litrosAbastecido.toFixed(2).replace('.', ','), '', '', '', '', '', '', '', '']);
+    rows.push(['VALIDADO OU NÃO VALIDADO', fuelStatus.ok ? 'VALIDADO' : 'NÃO VALIDADO', '', '', '', '', '', '', '', '']);
+    rows.push(['', '', '', '', '', '', '', '', '', '']);
   }
 
   dates.forEach(function(d) {
     const day = byDate[d];
     const dataBr = new Date(d + 'T12:00:00').toLocaleDateString('pt-BR');
     const sortedVisits = day.visits.slice().sort(function(a, b) { return new Date(a.dateTime) - new Date(b.dateTime); });
-    const dayKm = sortedVisits.reduce(function(s, v) { return s + (v.distance || 0); }, 0);
+    const kmTrabalhoDia = sortedVisits.filter(function(v) { return !isPessoalVisit(v); }).reduce(function(s, v) { return s + (v.distance || 0); }, 0);
+    const kmPessoalDia = sortedVisits.filter(isPessoalVisit).reduce(function(s, v) { return s + (v.distance || 0); }, 0);
 
     sortedVisits.forEach(function(v) {
       const time = new Date(v.dateTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-      rows.push([dataBr, time, v.locationName || '', (v.distance || 0).toFixed(2).replace('.', ','), '', '', '', '']);
+      const categoria = isPessoalVisit(v) ? 'Pessoal' : 'Trabalho';
+      rows.push([dataBr, time, v.locationName || '', categoria, (v.distance || 0).toFixed(2).replace('.', ','), '', '', '', '', '']);
     });
-    if (dayKm > 0) {
-      rows.push([dataBr, '', 'Total do dia', '', dayKm.toFixed(2).replace('.', ','), '', '', '']);
+    if (kmTrabalhoDia > 0 || kmPessoalDia > 0) {
+      rows.push([dataBr, '', 'Total do dia', '', '', kmTrabalhoDia.toFixed(2).replace('.', ','), kmPessoalDia.toFixed(2).replace('.', ','), '', '', '']);
     }
     day.refuels.forEach(function(r) {
-      rows.push([dataBr, '', '', '', '', r.station || '', r.value.toFixed(2).replace('.', ','), r.liters.toFixed(2).replace('.', ',')]);
+      rows.push([dataBr, '', '', '', '', '', '', r.station || '', r.value.toFixed(2).replace('.', ','), r.liters.toFixed(2).replace('.', ',')]);
     });
   });
 
@@ -2591,6 +2785,7 @@ function formatLocalDateTimeInput(d) {
   enterKey('fuelKmL', saveFuelConfig);
 
   updateLastLocationLabel();
+  renderSessaoAtual();
 
   const ls = document.getElementById('loadStamp');
   if (ls) ls.textContent = 'Carregado em ' + new Date().toLocaleString('pt-BR');
