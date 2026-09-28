@@ -68,6 +68,8 @@ h1{font-family:"Manrope",system-ui,sans-serif;font-weight:700;font-size:1.5rem;m
 .kpi.critico{background:var(--late-weak);border-left-color:var(--late);color:var(--late)}
 .kpi.muted{background:var(--surface-2);border-left-color:var(--text-muted);color:var(--text-muted)}
 .kpi.nofat{background:#ffe1cc;border-left-color:rgb(254,80,0);color:rgb(254,80,0)}
+.kpi.dark{background:var(--brand-bar);border-left-color:var(--accent);color:var(--accent)}
+.kpi.dark .l{color:#fff;opacity:.85}
 .kpi.clickable{cursor:pointer}
 .kpi.clickable:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(30,20,10,.14);filter:brightness(1.05) saturate(1.1)}
 .kpi.clickable:active{transform:translateY(0);filter:brightness(.97)}
@@ -401,7 +403,8 @@ td input.cidade{min-width:118px}
     });
     var entreguesTotal = ok + late;
     var pct = entreguesTotal>0 ? Math.round((ok/entreguesTotal)*100) : null;
-    return {total:total, ok:ok, late:late, transito:transito, indef:indef, pct:pct, critico:critico, semFat:semFat};
+    var latePct = entreguesTotal>0 ? Math.round((late/entreguesTotal)*100) : null;
+    return {total:total, ok:ok, late:late, transito:transito, indef:indef, pct:pct, latePct:latePct, critico:critico, semFat:semFat};
   }
 
   function ufOptionsDatalist(){
@@ -436,7 +439,7 @@ td input.cidade{min-width:118px}
     {tone:'warn', filter:'warn', label:'Em trânsito', val:function(k){return k.transito;}, pctBase:true},
     {tone:'muted', filter:'muted', label:'Prazo indefinido', val:function(k){return k.indef;}, showIf:function(k){return k.indef>0;}, pctBase:true},
     {tone:'nofat', filter:'nofat', label:'Aguardando faturamento', val:function(k){return k.semFat;}, showIf:function(k){return k.semFat>0;}, pctBase:true},
-    {tone:'', filter:null, label:'Cumprimento do acordo', val:function(k){return k.pct===null?'—':k.pct+'%';}}
+    {tone:'dark', filter:null, label:'Atrasado', val:function(k){return k.latePct===null?'—':k.latePct+'%';}}
   ];
 
   function renderKpis(){
