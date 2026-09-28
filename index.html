@@ -119,7 +119,12 @@
     </div>
     <div class="form-group">
       <label>Senha</label>
-      <input type="password" id="loginPassword" placeholder="Mínimo 6 caracteres" autocomplete="current-password" onkeydown="if(event.key==='Enter'){event.preventDefault();doLogin();}">
+      <div style="position:relative;">
+        <input type="password" id="loginPassword" placeholder="Mínimo 6 caracteres" autocomplete="current-password" style="padding-right:44px;" onkeydown="if(event.key==='Enter'){event.preventDefault();doLogin();}">
+        <button type="button" onclick="toggleLoginPasswordVisibility()" aria-label="Mostrar senha" title="Mostrar senha" style="position:absolute; right:4px; top:50%; transform:translateY(-50%); background:none; border:none; padding:8px; cursor:pointer; color:var(--text-dim); width:auto;">
+          <svg id="loginPwEyeIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+        </button>
+      </div>
     </div>
     <button class="btn-primary full-w" onclick="doLogin()">Entrar</button>
     <button class="full-w" onclick="doSignup()">Criar conta nova</button>
@@ -128,6 +133,22 @@
     </p>
     <p class="hint" style="text-align:center; margin-top:8px;">Na primeira vez, toque em "Criar conta nova". Depois, use "Entrar".</p>
     <div id="loginMsg"></div>
+
+    <div id="newPasswordBox" style="display:none; margin-top:20px; padding-top:20px; border-top:1px solid var(--border-c);">
+      <h2 style="font-size:18px;">Defina sua nova senha</h2>
+      <p class="sub" style="margin-bottom:16px;">Você veio pelo link de recuperação enviado por e-mail. Digite abaixo a senha que vai usar a partir de agora.</p>
+      <div class="form-group">
+        <label>Nova senha</label>
+        <div style="position:relative;">
+          <input type="password" id="newPassword" placeholder="Mínimo 6 caracteres" autocomplete="new-password" style="padding-right:44px;" onkeydown="if(event.key==='Enter'){event.preventDefault();doSetNewPassword();}">
+          <button type="button" onclick="toggleNewPasswordVisibility()" aria-label="Mostrar senha" title="Mostrar senha" style="position:absolute; right:4px; top:50%; transform:translateY(-50%); background:none; border:none; padding:8px; cursor:pointer; color:var(--text-dim); width:auto;">
+            <svg id="newPwEyeIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+          </button>
+        </div>
+      </div>
+      <button class="btn-primary full-w" onclick="doSetNewPassword()">Salvar nova senha</button>
+      <div id="newPasswordMsg"></div>
+    </div>
   </div>
 </div>
 
@@ -472,9 +493,56 @@ async function doResetPassword() {
   const email = document.getElementById('loginEmail').value.trim();
   if (!email) { loginMsg('Digite seu e-mail no campo acima e toque em "Esqueci minha senha".'); return; }
   loginMsg('Enviando e-mail de recuperação...', 'success');
-  const { error } = await sb.auth.resetPasswordForEmail(email);
+  // Manda de volta pra esta mesma página (qualquer que seja a URL usada agora),
+  // senão o Supabase manda pra URL padrão configurada no projeto.
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + window.location.pathname });
   if (error) { loginMsg('Erro: ' + error.message); return; }
   loginMsg('E-mail enviado! Verifique sua caixa de entrada (e o spam) para redefinir a senha.', 'success');
+}
+
+function toggleLoginPasswordVisibility() {
+  const input = document.getElementById('loginPassword');
+  const showing = input.type === 'text';
+  input.type = showing ? 'password' : 'text';
+  document.getElementById('loginPwEyeIcon').innerHTML = showing
+    ? '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"></path><circle cx="12" cy="12" r="3"></circle>'
+    : '<path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a20.3 20.3 0 0 1 5.06-5.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a20.3 20.3 0 0 1-3.22 4.53M14.12 14.12a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line>';
+}
+
+function toggleNewPasswordVisibility() {
+  const input = document.getElementById('newPassword');
+  const showing = input.type === 'text';
+  input.type = showing ? 'password' : 'text';
+  document.getElementById('newPwEyeIcon').innerHTML = showing
+    ? '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"></path><circle cx="12" cy="12" r="3"></circle>'
+    : '<path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a20.3 20.3 0 0 1 5.06-5.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a20.3 20.3 0 0 1-3.22 4.53M14.12 14.12a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line>';
+}
+
+// Quando o link do e-mail de recuperação abre a página, o Supabase dispara
+// esse evento com uma sessão temporária — é o gatilho pra mostrar o campo
+// de nova senha, em vez de deixar a pessoa presa na tela de login normal.
+sb.auth.onAuthStateChange(function(event, session) {
+  if (event === 'PASSWORD_RECOVERY') {
+    document.getElementById('loginScreen').style.display = 'flex';
+    document.getElementById('newPasswordBox').style.display = 'block';
+    document.getElementById('newPassword').focus();
+  }
+});
+
+async function doSetNewPassword() {
+  const newPassword = document.getElementById('newPassword').value;
+  const msgBox = document.getElementById('newPasswordMsg');
+  function msg(text, type) {
+    msgBox.innerHTML = '<div class="' + (type || 'error') + ' message" style="margin-top:12px;">' + text + '</div>';
+  }
+  if (!newPassword || newPassword.length < 6) { msg('A senha precisa ter ao menos 6 caracteres.'); return; }
+  msg('Salvando...', 'success');
+  const { data, error } = await sb.auth.updateUser({ password: newPassword });
+  if (error) { msg('Erro: ' + error.message); return; }
+  msg('Senha alterada! Entrando...', 'success');
+  document.getElementById('newPassword').value = '';
+  document.getElementById('newPasswordBox').style.display = 'none';
+  if (data && data.user) onLoggedIn(data.user);
 }
 
 async function doLogout() {
