@@ -370,8 +370,8 @@ td input.cidade{min-width:118px}
         out.situacao = sv.label+' + Entregue'+diasSuf;
         out.diasTxt='+'+d+' dia'+(d>1?'s':'')+' após o combinado com a transportadora';
       }
-      else if(d<0){ out.situacao='Adiantado'+diasSuf; out.situacaoTone='ok'; out.diasTxt=Math.abs(d)+' dia'+(Math.abs(d)>1?'s':'')+' antes do prazo'; }
-      else { out.situacao='No prazo'+diasSuf; out.situacaoTone='ok'; out.diasTxt='entregue na data acordada'; }
+      else if(d<0){ out.situacao='Adiantado + Entregue'+diasSuf; out.situacaoTone='ok'; out.diasTxt=Math.abs(d)+' dia'+(Math.abs(d)>1?'s':'')+' antes do prazo'; }
+      else { out.situacao='No prazo + Entregue'+diasSuf; out.situacaoTone='ok'; out.diasTxt='entregue na data acordada'; }
     } else {
       var d2 = diasDecorridos(previsao, todayISO());
       if(d2>0){ var sv2=severity(d2); out.situacao=sv2.label; out.situacaoTone=sv2.tone; out.diasTxt='+'+d2+' dia'+(d2>1?'s':'')+' após o combinado, ainda não entregue'; }
