@@ -767,7 +767,7 @@ td input.cidade{min-width:118px}
       {label:'NO PRAZO / ADIANTADO', val:String(k.ok), color:[14,158,81], bg:[205,243,221]},
       {label:'ATRASADOS', val:String(k.late), color:[224,40,26], bg:[253,215,209]},
       {label:'EM TRÂNSITO', val:String(k.transito), color:[209,144,10], bg:[252,234,187]},
-      {label:'CUMPRIMENTO DO ACORDO', val:(k.pct===null?'—':k.pct+'%'), color:[242,96,10], bg:[255,224,191]}
+      {label:'ATRASADO', val:(k.latePct===null?'—':k.latePct+'%'), color:[242,96,10], bg:[24,20,16], labelColor:[255,255,255]}
     ];
     var gap = 8, boxW = (pageWidth-2*ML-gap*(kpiItems.length-1))/kpiItems.length, boxH = 42, boxY = 63;
     kpiItems.forEach(function(item, i){
@@ -778,7 +778,8 @@ td input.cidade{min-width:118px}
       doc.roundedRect(x, boxY, 4, boxH, 2, 2, 'F');
       doc.setFont('helvetica','bold'); doc.setFontSize(15); doc.setTextColor(item.color[0],item.color[1],item.color[2]);
       doc.text(item.val, x+12, boxY+22);
-      doc.setFont('helvetica','bold'); doc.setFontSize(6.3); doc.setTextColor(90,80,68);
+      var lc = item.labelColor || [90,80,68];
+      doc.setFont('helvetica','bold'); doc.setFontSize(6.3); doc.setTextColor(lc[0],lc[1],lc[2]);
       doc.text(item.label, x+12, boxY+34, {maxWidth:boxW-16});
     });
 
