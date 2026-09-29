@@ -429,7 +429,7 @@
   </div>
 
   <div style="text-align:center; color:var(--orange); font-size:12px; margin-top:1.5rem; padding:12px; border:1px dashed var(--orange); border-radius:8px;">
-    ✓ Versão 4.5 — Corrige data trocada (fuso horário) nos relatórios<br>
+    ✓ Versão 4.6 — Corrige emoji quebrado (Ø=Þ©) nos relatórios em PDF<br>
     <span id="loadStamp" style="color:var(--text-dim); font-size:10px;"></span>
   </div>
 </div>
@@ -819,6 +819,18 @@ function toLocalDateKey(input) {
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return y + '-' + m + '-' + day;
+}
+
+// jsPDF (fonte padrão Helvetica) não sabe desenhar emoji (🚩 🏁 🏠 etc.) —
+// vira caractere quebrado tipo "Ø=Þ©" e distorce o texto ao redor. Usar
+// isso em qualquer texto dinâmico (nome de local, observações) antes de
+// mandar pro doc.text() do PDF. Não afeta a tela, só o PDF.
+function pdfSafe(str) {
+  if (!str) return str;
+  return String(str)
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}️]/gu, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 
 function reverseGeocode(lat, lon) {
@@ -1575,8 +1587,8 @@ function buildPdf(visits, title, filename, periodLine) {
 
   let totalKm = 0;
   visits.forEach(function(visit, idx) {
-    let localText = visit.locationName || 'Local desconhecido';
-    if (visit.notes) localText += '\nObs: ' + visit.notes;
+    let localText = pdfSafe(visit.locationName) || 'Local desconhecido';
+    if (visit.notes) localText += '\nObs: ' + pdfSafe(visit.notes);
     const localLines = doc.splitTextToSize(localText, localMaxWidth);
     const rowHeight = Math.max(6, localLines.length * 4.5);
 
@@ -2468,7 +2480,7 @@ function generateTimelinePDF() {
     doc.text('Total litros abastecido: ' + fuelStatus.litrosAbastecido.toFixed(2) + ' L', 20, y); y += 5;
     doc.setFont(undefined, 'bold');
     if (fuelStatus.ok) doc.setTextColor(0, 140, 60); else doc.setTextColor(200, 100, 0);
-    doc.text(fuelStatus.ok ? '✔ VALIDADO' : '⚠ NÃO VALIDADO', 20, y);
+    doc.text(fuelStatus.ok ? 'VALIDADO' : 'NAO VALIDADO', 20, y);
     y += 8;
     doc.setTextColor(0, 0, 0);
     doc.setFont(undefined, 'normal');
@@ -2498,7 +2510,7 @@ function generateTimelinePDF() {
     sortedVisits.forEach(function(v) {
       if (y > pageHeight - 20) { doc.addPage(); y = 20; }
       const time = new Date(v.dateTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-      doc.text(time + ' - ' + v.locationName + ' (' + (v.distance || 0).toFixed(2) + ' km)', 24, y);
+      doc.text(time + ' - ' + (pdfSafe(v.locationName) || 'Local desconhecido') + ' (' + (v.distance || 0).toFixed(2) + ' km)', 24, y);
       y += 5;
     });
     if (dayKm > 0) {
