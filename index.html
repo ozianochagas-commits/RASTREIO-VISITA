@@ -443,7 +443,7 @@
   </div>
 
   <div style="text-align:center; color:var(--orange); font-size:12px; margin-top:1.5rem; padding:12px; border:1px dashed var(--orange); border-radius:8px;">
-    ✓ Versão 4.4 — Adicionar/editar visita esquecida sem GPS<br>
+    ✓ Versão 4.5 — Corrige data trocada (fuso horário) nos relatórios<br>
     <span id="loadStamp" style="color:var(--text-dim); font-size:10px;"></span>
   </div>
 </div>
@@ -821,6 +821,19 @@ function haversineStraight(lat1, lon1, lat2, lon2) {
 
 function haversineDistance(lat1, lon1, lat2, lon2) {
   return haversineStraight(lat1, lon1, lat2, lon2) * getRoadFactor();
+}
+
+// Retorna a data (YYYY-MM-DD) no fuso horário LOCAL do aparelho, não em UTC.
+// dateTime é salvo com .toISOString() (sempre UTC), então usar
+// .slice(0, 10) nele agrupa visitas feitas após 21h (em UTC-3) no dia
+// seguinte por engano. Esta função usa getFullYear/getMonth/getDate,
+// que já refletem o fuso local do navegador.
+function toLocalDateKey(input) {
+  const d = (input instanceof Date) ? input : new Date(input);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return y + '-' + m + '-' + day;
 }
 
 function reverseGeocode(lat, lon) {
@@ -1419,10 +1432,10 @@ function renderVisitsList() {
 
 function renderPeriodView() {
   showAllPeriod = false;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = toLocalDateKey(new Date());
   let earliest = today;
   if (state.visits.length > 0) {
-    const dates = state.visits.map(function(v) { return v.dateTime.slice(0, 10); });
+    const dates = state.visits.map(function(v) { return toLocalDateKey(v.dateTime); });
     earliest = dates.reduce(function(a, b) { return a < b ? a : b; });
   }
   document.getElementById('periodFrom').value = earliest;
@@ -1448,7 +1461,7 @@ function showPeriodVisits() {
   }
 
   const filtered = state.visits.filter(function(v) {
-    const d = v.dateTime.slice(0, 10);
+    const d = toLocalDateKey(v.dateTime);
     return d >= from && d <= to;
   }).sort(function(a, b) { return new Date(a.dateTime) - new Date(b.dateTime); });
 
@@ -1600,7 +1613,7 @@ function applyFilter() {
   }
   const visitsList = document.getElementById('visitsList');
   const filtered = state.visits.filter(function(v) {
-    const d = v.dateTime.slice(0, 10);
+    const d = toLocalDateKey(v.dateTime);
     return d >= from && d <= to;
   }).sort(function(a, b) { return new Date(a.dateTime) - new Date(b.dateTime); });
 
@@ -1650,7 +1663,7 @@ function generatePeriodExcel() {
     return;
   }
   const filtered = state.visits.filter(function(v) {
-    const d = v.dateTime.slice(0, 10);
+    const d = toLocalDateKey(v.dateTime);
     return d >= from && d <= to;
   }).sort(function(a, b) { return new Date(a.dateTime) - new Date(b.dateTime); });
 
@@ -1688,7 +1701,7 @@ function generatePeriodPDF() {
     return;
   }
   const filtered = state.visits.filter(function(v) {
-    const d = v.dateTime.slice(0, 10);
+    const d = toLocalDateKey(v.dateTime);
     return d >= from && d <= to;
   }).sort(function(a, b) { return new Date(a.dateTime) - new Date(b.dateTime); });
 
@@ -1787,10 +1800,10 @@ function renderFuelView() {
   if (state.fuel.kml != null) document.getElementById('fuelKmL').value = state.fuel.kml;
   document.getElementById('roadFactor').value = getRoadFactor().toFixed(2);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = toLocalDateKey(new Date());
   let earliest = today;
   if (state.visits.length > 0) {
-    const dates = state.visits.map(function(v) { return v.dateTime.slice(0, 10); });
+    const dates = state.visits.map(function(v) { return toLocalDateKey(v.dateTime); });
     earliest = dates.reduce(function(a, b) { return a < b ? a : b; });
   }
   if (!document.getElementById('fuelFrom').value) document.getElementById('fuelFrom').value = earliest;
@@ -1830,7 +1843,7 @@ function getFuelPeriodData() {
   const to = document.getElementById('fuelTo').value;
   if (!from || !to) return null;
   const filtered = state.visits.filter(function(v) {
-    const d = v.dateTime.slice(0, 10);
+    const d = toLocalDateKey(v.dateTime);
     return d >= from && d <= to;
   });
   const totalKm = filtered.reduce(function(s, v) { return s + (v.distance || 0); }, 0);
@@ -2478,7 +2491,7 @@ function getFuelValidationStatus(totalKm, refuelData) {
 // ===== RELATÓRIO: ONDE FUI (visitas x abastecimento no período) =====
 
 function getTimelinePeriodDates() {
-  const dates = state.visits.map(function(v) { return v.dateTime.slice(0, 10); })
+  const dates = state.visits.map(function(v) { return toLocalDateKey(v.dateTime); })
     .concat(state.refuels.map(function(r) { return r.date; }));
   if (dates.length === 0) return null;
   dates.sort();
@@ -2488,7 +2501,7 @@ function getTimelinePeriodDates() {
 function groupTimelineByDate(from, to) {
   const byDate = {};
   state.visits.forEach(function(v) {
-    const d = v.dateTime.slice(0, 10);
+    const d = toLocalDateKey(v.dateTime);
     if (d < from || d > to) return;
     if (!byDate[d]) byDate[d] = { visits: [], refuels: [] };
     byDate[d].visits.push(v);
@@ -2765,7 +2778,7 @@ function exportBackup() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'backup_visitas_' + new Date().toISOString().slice(0, 10) + '.json';
+  a.download = 'backup_visitas_' + toLocalDateKey(new Date()) + '.json';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
