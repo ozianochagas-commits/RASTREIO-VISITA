@@ -443,7 +443,7 @@
   </div>
 
   <div style="text-align:center; color:var(--orange); font-size:12px; margin-top:1.5rem; padding:12px; border:1px dashed var(--orange); border-radius:8px;">
-    ✓ Versão 4.5 — Corrige data trocada (fuso horário) nos relatórios<br>
+    ✓ Versão 4.6 — Início/fim do dia já salva com o endereço junto<br>
     <span id="loadStamp" style="color:var(--text-dim); font-size:10px;"></span>
   </div>
 </div>
@@ -828,6 +828,18 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
 // .slice(0, 10) nele agrupa visitas feitas após 21h (em UTC-3) no dia
 // seguinte por engano. Esta função usa getFullYear/getMonth/getDate,
 // que já refletem o fuso local do navegador.
+// jsPDF (fonte padrão Helvetica) não sabe desenhar emoji (🚩 🏁 🏠 etc.) —
+// vira caractere quebrado tipo "Ø=Þ©" e distorce o texto ao redor. Usar
+// isso em qualquer texto dinâmico (nome de local, observações) antes de
+// mandar pro doc.text() do PDF. Não afeta a tela, só o PDF.
+function pdfSafe(str) {
+  if (!str) return str;
+  return String(str)
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}️]/gu, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 function toLocalDateKey(input) {
   const d = (input instanceof Date) ? input : new Date(input);
   const y = d.getFullYear();
@@ -1290,11 +1302,18 @@ function escolherTipoSessao(tipo) {
   iniciarSessao(tipo);
 }
 
+// Um endereço reverso-geocodificado (reverseGeocode) sempre vem com um
+// short/full "de verdade"; nos casos de falha ele volta com um destes
+// textos-placeholder — usamos isso pra saber se vale a pena anexar.
+function enderecoValido(loc) {
+  return !!(loc && loc.short && loc.short.indexOf('Local ') !== 0);
+}
+
 function iniciarSessao(tipo) {
   const btn = document.getElementById('btnIniciarSessao');
   if (btn) { btn.disabled = true; btn.textContent = 'Detectando local...'; }
 
-  function finish(lat, lng, nomeDetectado) {
+  function salvar(lat, lng, nomeDetectado) {
     const submitTime = new Date();
     const base = tipo === 'pessoal' ? '🏠 Início (pessoal)' : '🚩 Início do dia (trabalho)';
     const nome = base + (nomeDetectado ? ' — ' + nomeDetectado : '');
@@ -1318,6 +1337,18 @@ function iniciarSessao(tipo) {
     showMessage((tipo === 'pessoal' ? '🏠 Saída pessoal iniciada' : '🚩 Dia de trabalho iniciado') + ' às ' + submitTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) + '!');
   }
 
+  // Se o nome já veio pronto (usuário escolheu num endereço buscado), usa
+  // direto. Senão (veio do GPS), busca o endereço automaticamente antes de
+  // salvar — assim o ponto de partida já nasce com o endereço junto, numa
+  // visita só, em vez de precisar editar depois.
+  function finish(lat, lng, nomeDetectado) {
+    if (nomeDetectado) { salvar(lat, lng, nomeDetectado); return; }
+    if (btn) btn.textContent = 'Buscando endereço...';
+    reverseGeocode(lat, lng).then(function(loc) {
+      salvar(lat, lng, enderecoValido(loc) ? loc.short : null);
+    });
+  }
+
   if (selectedFromSearch) { const s = selectedFromSearch; selectedFromSearch = null; finish(s.lat, s.lng, s.name); return; }
   if (lastKnownPosition) { const p = lastKnownPosition; lastKnownPosition = null; finish(p.coords.latitude, p.coords.longitude, null); return; }
   if (!checkGeoSupport()) { if (btn) { btn.disabled = false; btn.textContent = '▶ Iniciar saída'; } return; }
@@ -1339,7 +1370,7 @@ function finalizarSessao() {
   const btn = document.getElementById('btnFinalizarSessao');
   if (btn) { btn.disabled = true; btn.textContent = 'Detectando local...'; }
 
-  function finish(lat, lng, nomeDetectado) {
+  function salvar(lat, lng, nomeDetectado) {
     const submitTime = new Date();
     let distanceStraight = 0, fromLocationName = 'Ponto de partida', fromLat = null, fromLng = null;
     if (state.lastLocation) {
@@ -1369,6 +1400,17 @@ function finalizarSessao() {
     const resumo = kmEntreDatas(t0, t1);
     renderSessaoAtual();
     showMessage('✓ ' + (sessao.tipo === 'pessoal' ? 'Saída pessoal finalizada' : 'Dia de trabalho finalizado') + '! ' + resumo.km.toFixed(2) + ' km em ' + resumo.paradas + ' parada(s).');
+  }
+
+  // Mesma lógica do início: se não veio nome pronto (GPS puro), busca o
+  // endereço automaticamente antes de salvar, pra não sobrar um "Fim do
+  // dia" sem local que depois precisa ser editado à mão.
+  function finish(lat, lng, nomeDetectado) {
+    if (nomeDetectado) { salvar(lat, lng, nomeDetectado); return; }
+    if (btn) btn.textContent = 'Buscando endereço...';
+    reverseGeocode(lat, lng).then(function(loc) {
+      salvar(lat, lng, enderecoValido(loc) ? loc.short : null);
+    });
   }
 
   if (selectedFromSearch) { const s = selectedFromSearch; selectedFromSearch = null; finish(s.lat, s.lng, s.name); return; }
@@ -1760,8 +1802,8 @@ function buildPdf(visits, title, filename, periodLine) {
 
   let totalKm = 0;
   visits.forEach(function(visit, idx) {
-    let localText = visit.locationName || 'Local desconhecido';
-    if (visit.notes) localText += '\nObs: ' + visit.notes;
+    let localText = pdfSafe(visit.locationName) || 'Local desconhecido';
+    if (visit.notes) localText += '\nObs: ' + pdfSafe(visit.notes);
     const localLines = doc.splitTextToSize(localText, localMaxWidth);
     const rowHeight = Math.max(6, localLines.length * 4.5);
 
@@ -2662,7 +2704,7 @@ function generateTimelinePDF() {
     doc.text('Total litros abastecido: ' + fuelStatus.litrosAbastecido.toFixed(2) + ' L', 20, y); y += 5;
     doc.setFont(undefined, 'bold');
     if (fuelStatus.ok) doc.setTextColor(0, 140, 60); else doc.setTextColor(200, 100, 0);
-    doc.text(fuelStatus.ok ? '✔ VALIDADO' : '⚠ NÃO VALIDADO', 20, y);
+    doc.text(fuelStatus.ok ? 'VALIDADO' : 'NAO VALIDADO', 20, y);
     y += 8;
     doc.setTextColor(0, 0, 0);
     doc.setFont(undefined, 'normal');
@@ -2692,7 +2734,7 @@ function generateTimelinePDF() {
     sortedVisits.forEach(function(v) {
       if (y > pageHeight - 20) { doc.addPage(); y = 20; }
       const time = new Date(v.dateTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-      doc.text(time + ' - ' + v.locationName + ' (' + (v.distance || 0).toFixed(2) + ' km)', 24, y);
+      doc.text(time + ' - ' + (pdfSafe(v.locationName) || 'Local desconhecido') + ' (' + (v.distance || 0).toFixed(2) + ' km)', 24, y);
       y += 5;
     });
     if (dayKm > 0) {
