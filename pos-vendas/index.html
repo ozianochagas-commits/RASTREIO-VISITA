@@ -223,7 +223,7 @@ td input.cidade{min-width:118px}
   </div>
 
   <div class="notes" hidden>
-    <b>Como funciona:</b> o prazo é preenchido automaticamente pela tabela de referência (UF + cidade da transportadora); quando a cidade não é informada, é usado o prazo médio da UF — preencha a cidade para o valor exato, ou digite um prazo manual na coluna "Prazo (dias)". A previsão de entrega é a data de faturamento + prazo, contando em dias úteis (pula sábado e domingo) por padrão — desmarque "Dias úteis" no filtro para contar em dias corridos. A situação compara a previsão com a data real informada (ou com hoje, se ainda não entregue); a partir de 1 dia de atraso o status já aparece em vermelho (Atrasado), ficando mais forte acima de 2 dias — essa contagem de atraso só começa depois que o pedido é faturado. Enquanto não houver data de faturamento, o pedido fica com a etiqueta laranja "Aguardando faturamento", mostrando há quantos dias está parado sem nota fiscal (some sozinha assim que a coluna "Faturamento" for preenchida); esse total também aparece no card "Aguardando faturamento" no topo, quando houver algum. Depois de faturado, a coluna "Data do Pedido" mostra abaixo do campo "Faturamento" quantos dias levou para faturar. A etiqueta roxa "Plano 3º Tri" é apenas um lembrete visual — aparece nos clientes com plano ativo no 3º trimestre, mostrando o % da meta já atingido (passe o mouse para ver o grupo e a meta em R$); vem pronta da planilha de acompanhamento, não precisa preencher nada. Use "Importar dados" para atualizar a tabela direto da planilha de rastreamento (colunas Código, Cliente, Estado, Data do Pedido, Data do Faturamento, Nº Nota Fiscal, Status Mercadoria) — a importação substitui todos os pedidos atuais pelos do arquivo enviado.
+    <b>Como funciona:</b> o prazo é preenchido automaticamente pela tabela de referência (UF + cidade da transportadora); quando a cidade não é informada, é usado o prazo médio da UF — preencha a cidade para o valor exato, ou digite um prazo manual na coluna "Prazo (dias)". A previsão de entrega é a data de faturamento + prazo, contando em dias úteis (pula sábado e domingo) por padrão — desmarque "Dias úteis" no filtro para contar em dias corridos. A situação compara a previsão com a data real informada (ou com hoje, se ainda não entregue); a partir de 1 dia de atraso o status já aparece em vermelho (Atrasado), ficando mais forte acima de 2 dias — essa contagem de atraso só começa depois que o pedido é faturado. Enquanto não houver data de faturamento, o pedido fica com a etiqueta laranja "Aguardando faturamento", mostrando há quantos dias está parado sem nota fiscal (some sozinha assim que a coluna "Faturamento" for preenchida); esse total também aparece no card "Aguardando faturamento" no topo, quando houver algum. Depois de faturado, a coluna "Data do Pedido" mostra abaixo do campo "Faturamento" quantos dias levou para faturar. A etiqueta roxa "Plano 3º Tri" é apenas um lembrete visual — aparece nos clientes com plano ativo no 3º trimestre, mostrando o % da meta já atingido (passe o mouse para ver o grupo e a meta em R$); vem pronta da planilha de acompanhamento, não precisa preencher nada. Use "Importar dados" para atualizar a tabela direto da planilha de rastreamento (colunas Código, Cliente, Estado, Data do Pedido, Data do Faturamento, Nº Nota Fiscal, Status Mercadoria) — a importação acrescenta os pedidos do arquivo aos que já estão na tabela, sem apagar nada; se um pedido já existir (mesmo cliente e mesma nota fiscal), ele é atualizado em vez de duplicado.
   </div>
 
   <div class="modal-overlay" id="rankingModal" hidden="">
@@ -603,8 +603,17 @@ td input.cidade{min-width:118px}
       if(isNaN(v.getTime())) return null;
       return v.getFullYear()+'-'+pad(v.getMonth()+1)+'-'+pad(v.getDate());
     }
+    // data que chega como número (serial do Excel, ex.: 46020 = 29/12/2025)
+    if(typeof v==='number' && isFinite(v) && v>20000 && v<80000){
+      var dt = new Date(Math.round((v-25569)*86400000));
+      return dt.getUTCFullYear()+'-'+pad(dt.getUTCMonth()+1)+'-'+pad(dt.getUTCDate());
+    }
     if(typeof v==='string'){
-      var m = v.trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+      var t = v.trim();
+      if(/^\d{5}(\.\d+)?$/.test(t)) return excelSerialToISO(Number(t));
+      var iso = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+      if(iso) return iso[1]+'-'+pad(+iso[2])+'-'+pad(+iso[3]);
+      var m = t.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
       if(m){ var d=+m[1],mo=+m[2],y=+m[3]; if(y<100) y+=2000; return y+'-'+pad(mo)+'-'+pad(d); }
     }
     return null;
@@ -675,7 +684,7 @@ td input.cidade{min-width:118px}
       var plan = codeKey!=null ? CODE_TO_PLAN[codeKey] : null;
       var cidadeAuto = codeKey!=null && CODE_TO_CITY[codeKey] ? CODE_TO_CITY[codeKey] : '';
       newRows.push({
-        id: 'p'+(codeKey||'x')+'_'+r,
+        id: 'p'+(codeKey||'x')+'_'+Date.now().toString(36)+'_'+r,
         codigo: codeKey!=null ? Number(codeKey) : null,
         cliente: cliente, uf: uf, cidade: cidadeAuto,
         repManual: null, transpManual: null,
@@ -692,10 +701,49 @@ td input.cidade{min-width:118px}
   var AUTOMATICO = '__automatico__';
   var pendingImport = null;
 
+  // Chave do cliente: código quando existe, senão o nome normalizado.
+  function importClientKey(r){
+    if(r.codigo!=null && r.codigo!=='' && !isNaN(Number(r.codigo))) return 'c'+Math.trunc(Number(r.codigo));
+    return 'n'+normHeader(r.cliente);
+  }
+  function importNfKey(nf){ return String(nf||'').replace(/\D+/g,'').replace(/^0+/,''); }
+
+  // Procura na tabela o pedido que corresponde à linha importada:
+  // mesmo cliente + mesma nota fiscal; se a linha ainda não tem NF (ou o pedido
+  // da tabela ainda não tinha), mesmo cliente + mesma data do pedido.
+  function findExistingRow(n, pool){
+    var ck = importClientKey(n), nk = importNfKey(n.nf), i, r;
+    if(nk){
+      for(i=0;i<pool.length;i++){ r=pool[i]; if(importClientKey(r)===ck && importNfKey(r.nf)===nk) return r; }
+    }
+    if(n.dataPedido){
+      for(i=0;i<pool.length;i++){
+        r=pool[i];
+        if(importClientKey(r)===ck && r.dataPedido===n.dataPedido && (!importNfKey(r.nf) || !nk)) return r;
+      }
+    }
+    return null;
+  }
+
+  function planImport(newRows){
+    var pool = STATE.rows.slice(), plan = [], novos = 0, atualizados = 0;
+    newRows.forEach(function(n){
+      var ex = findExistingRow(n, pool);
+      if(ex){ pool.splice(pool.indexOf(ex),1); atualizados++; }
+      else novos++;
+      plan.push({row:n, existing:ex});
+    });
+    return {items:plan, novos:novos, atualizados:atualizados};
+  }
+
   function openImportRepModal(newRows, filename){
-    pendingImport = { rows: newRows, filename: filename };
+    var plan = planImport(newRows);
+    pendingImport = { rows: newRows, filename: filename, plan: plan };
+    var partes = [];
+    if(plan.novos) partes.push(plan.novos+(plan.novos===1?' novo':' novos'));
+    if(plan.atualizados) partes.push(plan.atualizados+(plan.atualizados===1?' já estava na tabela e será atualizado':' já estavam na tabela e serão atualizados'));
     document.getElementById('importRepCount').textContent =
-      newRows.length+' pedidos de "'+filename+'" — isso substitui todos os pedidos atuais da tabela.';
+      newRows.length+' pedidos de "'+filename+'" ('+partes.join(', ')+'). Nada é apagado — os '+STATE.rows.length+' pedidos que já estão na tabela continuam lá.';
     var sel = document.getElementById('importRepSelect');
     sel.innerHTML =
       '<option value="'+AUTOMATICO+'">Automático (pelo Estado de cada cliente)</option>'+
@@ -713,13 +761,29 @@ td input.cidade{min-width:118px}
   function confirmImportRep(){
     if(!pendingImport) return;
     var rep = document.getElementById('importRepSelect').value;
-    var rows = pendingImport.rows;
-    if(rep !== AUTOMATICO){
-      rows.forEach(function(r){ r.repManual = rep; });
-    }
-    STATE.rows = rows;
+    // recalcula na hora de confirmar (a tabela pode ter mudado com o modal aberto)
+    var plan = planImport(pendingImport.rows);
+    plan.items.forEach(function(it){
+      var n = it.row, ex = it.existing;
+      if(rep !== AUTOMATICO) n.repManual = rep;
+      if(!ex){ STATE.rows.push(n); return; }
+      // atualiza só o que veio preenchido na planilha; mantém o que foi editado à mão
+      if(n.codigo!=null) ex.codigo = n.codigo;
+      if(n.uf) ex.uf = n.uf;
+      if(!ex.cidade && n.cidade) ex.cidade = n.cidade;
+      if(n.dataPedido) ex.dataPedido = n.dataPedido;
+      if(n.dataFat) ex.dataFat = n.dataFat;
+      if(n.nf) ex.nf = n.nf;
+      if(n.dataEntrega) ex.dataEntrega = n.dataEntrega;
+      if(n.obs) ex.obs = n.obs;
+      if(n.plano){ ex.plano = true; ex.planoGrupo = n.planoGrupo; ex.planoMeta = n.planoMeta; ex.planoPct = n.planoPct; }
+      if(rep !== AUTOMATICO) ex.repManual = rep;
+    });
     renderAll(); scheduleSave();
-    toast(rows.length+' pedidos importados'+(rep!==AUTOMATICO ? ' — representante: '+rep : '')+'.');
+    var msg = [];
+    if(plan.novos) msg.push(plan.novos+(plan.novos===1?' pedido acrescentado':' pedidos acrescentados'));
+    if(plan.atualizados) msg.push(plan.atualizados+(plan.atualizados===1?' atualizado':' atualizados'));
+    toast(msg.join(', ')+(rep!==AUTOMATICO ? ' — representante: '+rep : '')+'. Total na tabela: '+STATE.rows.length+'.');
     closeImportRepModal();
   }
 
