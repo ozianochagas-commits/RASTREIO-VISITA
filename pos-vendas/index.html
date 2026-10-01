@@ -601,6 +601,8 @@ td input.cidade{min-width:118px}
     // XLSX with cellDates:true already hands back JS Date objects for date cells
     if(v instanceof Date){
       if(isNaN(v.getTime())) return null;
+      // a planilha às vezes devolve 23:59:xx do dia anterior (fuso); arredonda para o dia certo
+      v = new Date(v.getTime()+12*3600000); v.setHours(0,0,0,0);
       return v.getFullYear()+'-'+pad(v.getMonth()+1)+'-'+pad(v.getDate());
     }
     // data que chega como número (serial do Excel, ex.: 46020 = 29/12/2025)
@@ -621,6 +623,11 @@ td input.cidade{min-width:118px}
 
   function parseStatusText(status){
     if(!status) return {dataEntrega:null, obs:''};
+    // coluna de status com uma data (célula de data do Excel): guarda como dd/mm/aaaa
+    if(status instanceof Date){
+      var iso = excelSerialToISO(status);
+      return {dataEntrega:null, obs: iso ? iso.slice(8,10)+'/'+iso.slice(5,7)+'/'+iso.slice(0,4) : ''};
+    }
     var s = String(status).replace(/\s+/g,' ').trim();
     var low = s.toLowerCase();
     var m = /entregu\w*/.exec(low);
