@@ -653,10 +653,12 @@ td input.cidade{min-width:118px}
 
   function parseStatusText(status){
     if(!status) return {dataEntrega:null, obs:''};
-    // coluna de status com uma data (célula de data do Excel): guarda como dd/mm/aaaa
-    if(status instanceof Date){
-      var iso = excelSerialToISO(status);
-      return {dataEntrega:null, obs: iso ? iso.slice(8,10)+'/'+iso.slice(5,7)+'/'+iso.slice(0,4) : ''};
+    // coluna de status só com uma data (célula de data do Excel ou texto "14/09/2026"):
+    // é a data em que a mercadoria foi entregue
+    var soData = (status instanceof Date) ? excelSerialToISO(status)
+      : (/^\s*\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}\s*$/.test(String(status)) ? excelSerialToISO(String(status)) : null);
+    if(soData){
+      return {dataEntrega: soData, obs: 'Entregue dia '+soData.slice(8,10)+'/'+soData.slice(5,7)+'/'+soData.slice(0,4)};
     }
     var s = String(status).replace(/\s+/g,' ').trim();
     var low = s.toLowerCase();
