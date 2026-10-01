@@ -264,7 +264,7 @@ td input.cidade{min-width:118px}
   var CODE_TO_PLAN = {"9320":{"grupo":"DIFERENCIAL DISTRIBUIDORA DE PEÇAS LTDA","pct":0.0,"meta":110000},"8705":{"grupo":"XWM PECAS PARA MOTORES LTDA","pct":0.0,"meta":150000},"23663":{"grupo":"RETIFICA MERIDIONAL LTDA","pct":0.6170488181818181,"meta":110000},"32468":{"grupo":"JERONYMO DIXNEUF PECAS E SERVICOS LTDA","pct":0.8466803030303031,"meta":330000},"40037":{"grupo":"JERONYMO DIXNEUF PECAS E SERVICOS LTDA","pct":0.8466803030303031,"meta":330000},"2658":{"grupo":"JERONYMO DIXNEUF PECAS E SERVICOS LTDA","pct":0.8466803030303031,"meta":330000},"3264":{"grupo":"IDEAL DISTRIBUIDORA DE PECAS PARA VEICULOS LTDA","pct":0.4982380166666668,"meta":600000},"9233":{"grupo":"ID AUTO PEÇAS LTDA","pct":0.023329880000000035,"meta":250000},"8343":{"grupo":"R M R AUTOPARTS COMERCIO DE PECAS AUTOMOTIVAS LTDA","pct":0.0,"meta":75000},"39":{"grupo":"CYRO CAVALCANTI AUTO PEÇAS LTDA","pct":0.55318275,"meta":800000},"5530":{"grupo":"CYRO CAVALCANTI AUTO PEÇAS LTDA","pct":0.55318275,"meta":800000},"6406":{"grupo":"CYRO CAVALCANTI AUTO PEÇAS LTDA","pct":0.55318275,"meta":800000},"6854":{"grupo":"CYRO CAVALCANTI AUTO PEÇAS LTDA","pct":0.55318275,"meta":800000},"2404":{"grupo":"CYRO CAVALCANTI AUTO PEÇAS LTDA","pct":0.55318275,"meta":800000},"2362":{"grupo":"CYRO CAVALCANTI AUTO PEÇAS LTDA","pct":0.55318275,"meta":800000},"6921":{"grupo":"AUTO NORTE DISTRIBUIDORA DE PECAS LTDA","pct":0.8181405205479453,"meta":730000},"6925":{"grupo":"AUTO NORTE DISTRIBUIDORA DE PECAS LTDA","pct":0.8181405205479453,"meta":730000},"6927":{"grupo":"AUTO NORTE DISTRIBUIDORA DE PECAS LTDA","pct":0.8181405205479453,"meta":730000},"6923":{"grupo":"AUTO NORTE DISTRIBUIDORA DE PECAS LTDA","pct":0.8181405205479453,"meta":730000},"6924":{"grupo":"AUTO NORTE DISTRIBUIDORA DE PECAS LTDA","pct":0.8181405205479453,"meta":730000},"8302":{"grupo":"AUTO NORTE DISTRIBUIDORA DE PECAS LTDA","pct":0.8181405205479453,"meta":730000},"8172":{"grupo":"AUTO NORTE DISTRIBUIDORA DE PECAS LTDA","pct":0.8181405205479453,"meta":730000},"8962":{"grupo":"AUTO NORTE DISTRIBUIDORA DE PECAS LTDA","pct":0.8181405205479453,"meta":730000},"7865":{"grupo":"AUTO NORTE DISTRIBUIDORA DE PECAS LTDA","pct":0.8181405205479453,"meta":730000},"6919":{"grupo":"AUTO NORTE DISTRIBUIDORA DE PECAS LTDA","pct":0.8181405205479453,"meta":730000},"8834":{"grupo":"AUTO NORTE DISTRIBUIDORA DE PECAS LTDA","pct":0.8181405205479453,"meta":730000},"9155":{"grupo":"AUTO NORTE DISTRIBUIDORA DE PECAS LTDA","pct":0.8181405205479453,"meta":730000},"9154":{"grupo":"AUTO NORTE DISTRIBUIDORA DE PECAS LTDA","pct":0.8181405205479453,"meta":730000},"7782":{"grupo":"AUTO NORTE DISTRIBUIDORA DE PECAS LTDA","pct":0.8181405205479453,"meta":730000},"6922":{"grupo":"AUTO NORTE DISTRIBUIDORA DE PECAS LTDA","pct":0.8181405205479453,"meta":730000},"7893":{"grupo":"AUTO NORTE DISTRIBUIDORA DE PECAS LTDA","pct":0.8181405205479453,"meta":730000}};
   var CODE_TO_CITY = {"8068":"ABREU E LIMA","7909":"AFRANIO","39":"RECIFE","377":"PARNAMIRIM","6921":"RECIFE","7995":"ARACAJU","8980":"ARACAJU","9153":"ARACAJU","19372":"ARACAJU","7267":"RECIFE","6864":"ARACAJU","4593":"ARAPIRACA","5869":"ARAPIRACA","7100":"ARAPIRACA","7190":"ARAPIRACA","8225":"ARAPIRACA","9218":"ARAPIRACA","1030":"CAMPINA GRANDE","3264":"CAMPINA GRANDE","3430":"CAMPINA GRANDE","9386":"CAMPINA GRANDE","4047":"CARUARU","5647":"CARUARU","1740":"CONDE","9286":"ESTANCIA","8339":"GARANHUNS","8613":"GARANHUNS","23663":"GARANHUNS","2624":"ITABAIANA","8979":"ITABAIANA","60002":"ITABAIANA","8444":"ITABAIANA","3574":"JABOATAO DOS GUARARAPES","6188":"JABOATAO DOS GUARARAPES","6550":"RECIFE","6832":"JABOATAO DOS GUARARAPES","8215":"JABOATAO DOS GUARARAPES","9320":"NATAL","7345":"JOAO PESSOA","7546":"NATAL","8896":"JOAO PESSOA","1263":"MACEIO","4796":"MACEIO","5766":"RECIFE","7085":"MACEIO","7654":"MACEIO","8611":"MACEIO","8953":"MOSSORO","32468":"PETROLINA","4944":"MOSSORO","8705":"NATAL","9467":"NATAL","6965":"NOSSA SENHORA DA GLORIA","7532":"PARNAMIRIM","8061":"PARNAMIRIM","9430":"PARNAMIRIM","9486":"PATOS","6495":"PETROLINA","8343":"PETROLINA","5287":"RECIFE","6942":"RECIFE","9233":"RECIFE","6762":"RECIFE","4551":"SAO BENTO DO UNA","8552":"SAPE","9346":"SUME","6051":"TIMBAUBA","8619":"TRINDADE","4126":"VITORIA DE SANTO ANTAO"};
   var SEM_REP = 'Sem representante';
-  var REP_POR_CODIGO = {};
+  var UF_POR_CODIGO = {};
 
   var dataEl = document.getElementById('boot-state');
   var STATE = JSON.parse(dataEl.textContent);
@@ -329,9 +329,11 @@ td input.cidade{min-width:118px}
     var base = lookupPrazo(row.uf, row.cidade);
     var prazo = (row.prazoManual!=null && row.prazoManual!=='') ? Number(row.prazoManual) : base.prazo;
     var transp = row.transpManual || base.transp || '';
-    // ordem: escolhido à mão → pelo código do cliente (dados do sistema) → pelo Estado
-    var repCod = (row.codigo!=null && row.codigo!=='') ? REP_POR_CODIGO[String(Math.trunc(Number(row.codigo)))] : null;
-    var rep = (row.repManual || repCod || (row.uf ? (STATE.reps[row.uf.toUpperCase().trim()]||'') : '')) || '';
+    // representante pela região do Estado (ex.: ATIVA = CE, PI, MA); escolhido à mão vale antes.
+    // Sem UF no pedido, o Estado sai do código do cliente (dados do sistema).
+    var ufRep = (row.uf||'').toUpperCase().trim();
+    if(!ufRep && row.codigo!=null && row.codigo!=='') ufRep = UF_POR_CODIGO[String(Math.trunc(Number(row.codigo)))] || '';
+    var rep = (row.repManual || (ufRep ? (STATE.reps[ufRep]||'') : '')) || '';
     var origem = row.dataFat || row.dataPedido || null;
     var previsao = (origem && prazo!=null) ? addPrazo(origem, prazo) : null;
     var out = { prazo:prazo, prazoFonte: (row.prazoManual!=null && row.prazoManual!=='') ? 'manual' : base.fonte,
@@ -428,9 +430,9 @@ td input.cidade{min-width:118px}
     return !!rn && extReps.indexOf(normRepName(rn))!==-1;
   }
   function rowsDoRep(){ return STATE.rows.filter(repVisivel); }
-  // Código do cliente → representante, mandado pelo sistema (Plano de Negócio / Cliente 360)
-  window.definirRepresentantesPorCodigo = function(mapa){
-    REP_POR_CODIGO = mapa || {};
+  // Código do cliente → Estado (UF), mandado pelo sistema (Plano de Negócio)
+  window.definirUfPorCodigo = function(mapa){
+    UF_POR_CODIGO = mapa || {};
     renderAll();
   };
   window.definirRepresentantesExternos = function(lista){
@@ -781,7 +783,7 @@ td input.cidade{min-width:118px}
       newRows.length+' pedidos de "'+filename+'" ('+partes.join(', ')+'). Nada é apagado — os '+STATE.rows.length+' pedidos que já estão na tabela continuam lá.';
     var sel = document.getElementById('importRepSelect');
     sel.innerHTML =
-      '<option value="'+AUTOMATICO+'">Automático (pelo código do cliente; se não achar, pelo Estado)</option>'+
+      '<option value="'+AUTOMATICO+'">Automático (pela região do Estado de cada cliente)</option>'+
       REP_LIST.map(function(name){ return '<option value="'+escAttr(name)+'">'+escHtml(name)+'</option>'; }).join('')+
       '<option value="'+escAttr(SEM_REP)+'">'+escHtml(SEM_REP)+'</option>';
     sel.value = AUTOMATICO;
