@@ -73,6 +73,7 @@
   .empty-state { text-align: center; color: var(--text-dim); padding: 2rem 1rem; font-size: 14px; }
   h3 { font-size: 15px; margin-bottom: 1rem; color: var(--orange); }
   .full-w { width: 100%; margin-bottom: 8px; }
+  .collapsible-toggle { text-align: left; font-weight: 600; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
   .hint { font-size: 11px; color: var(--text-dim); margin-top: -4px; margin-bottom: 12px; line-height: 1.4; }
   .suggestions { margin-top: 4px; border-radius: 8px; overflow: hidden; }
@@ -266,7 +267,9 @@
     </div>
     <div id="periodSummary"></div>
     <div id="periodList"></div>
-    <div class="filter-group">
+
+    <button class="full-w collapsible-toggle" onclick="toggleSection(this, 'secFiltroRapido')">▸ Filtro rápido por data</button>
+    <div id="secFiltroRapido" class="filter-group" style="display:none;">
       <div class="grid2">
         <div class="form-group" style="margin-bottom: 0;">
           <label>De:</label>
@@ -280,8 +283,8 @@
       <button class="full-w" onclick="applyFilter()">Filtrar</button>
     </div>
 
-    <div class="filter-group">
-      <h3 style="margin-bottom: 8px;">Adicionar visita esquecida</h3>
+    <button class="full-w collapsible-toggle" id="secAddVisitToggle" onclick="toggleSection(this, 'secAddVisit')">▸ Adicionar visita esquecida</button>
+    <div id="secAddVisit" class="filter-group" style="display:none;">
       <p style="font-size: 12px; color: var(--text-dim); margin-bottom: 12px;">Esqueceu de registrar uma parada? Preencha aqui na hora — sem precisar do GPS nem de planilha. Toque no lápis de qualquer visita na lista abaixo para corrigi-la depois.</p>
       <div class="grid2">
         <div class="form-group" style="margin-bottom: 0;">
@@ -313,8 +316,8 @@
       <button class="full-w" id="quickVisitCancelBtn" onclick="cancelEditQuickVisit()" style="display:none;">Cancelar edição</button>
     </div>
 
-    <div class="filter-group">
-      <h3 style="margin-bottom: 8px;">Backup dos dados</h3>
+    <button class="full-w collapsible-toggle" onclick="toggleSection(this, 'secBackup')">▸ Backup dos dados</button>
+    <div id="secBackup" class="filter-group" style="display:none;">
       <p style="font-size: 12px; color: var(--text-dim); margin-bottom: 12px;">Salve um arquivo de backup regularmente. Se trocar de link/navegador, use "Importar" para recuperar suas visitas.</p>
       <div class="grid2" style="margin-bottom: 0;">
         <button onclick="exportBackup()">Exportar backup</button>
@@ -323,8 +326,8 @@
       <input type="file" id="importFile" accept="application/json" style="display:none" onchange="importBackup(event)">
     </div>
 
-    <div class="filter-group">
-      <h3 style="margin-bottom: 8px;">Importar visitas esquecidas (planilha)</h3>
+    <button class="full-w collapsible-toggle" onclick="toggleSection(this, 'secImportCsv')">▸ Importar visitas esquecidas (planilha)</button>
+    <div id="secImportCsv" class="filter-group" style="display:none;">
       <p style="font-size: 12px; color: var(--text-dim); margin-bottom: 12px;">Baixe o modelo, preencha uma linha por visita esquecida (data, hora, local e km rodado desde a visita anterior) e importe todas de uma vez. A data/hora de cada visita é atualizada de acordo com o que estiver na planilha.</p>
       <div class="grid2" style="margin-bottom: 0;">
         <button onclick="downloadVisitImportTemplate()">Baixar modelo</button>
@@ -333,13 +336,16 @@
       <input type="file" id="importVisitsCsv" accept=".csv" style="display:none" onchange="importVisitsFromCsv(event)">
     </div>
 
-    <div class="filter-group">
-      <h3 style="margin-bottom: 8px;">Recalcular distâncias</h3>
+    <button class="full-w collapsible-toggle" onclick="toggleSection(this, 'secRecalc')">▸ Recalcular distâncias</button>
+    <div id="secRecalc" class="filter-group" style="display:none;">
       <p style="font-size: 12px; color: var(--text-dim); margin-bottom: 12px;">Aplica o fator de correção de estrada atual a todas as visitas já registradas. Use depois de mudar o fator na aba Combustível.</p>
       <button class="btn-primary full-w" onclick="confirmRecalc()">Recalcular todas as distâncias</button>
     </div>
 
-    <div id="visitsList"></div>
+    <button class="full-w collapsible-toggle" onclick="toggleSection(this, 'secVisitsList')">▸ Todas as visitas (editar/excluir)</button>
+    <div id="secVisitsList" style="display:none;">
+      <div id="visitsList"></div>
+    </div>
   </div>
 
   <div id="combustivel" class="tab-content">
@@ -440,7 +446,7 @@
   </div>
 
   <div style="text-align:center; color:var(--orange); font-size:12px; margin-top:1.5rem; padding:12px; border:1px dashed var(--orange); border-radius:8px;">
-    ✓ Versão 4.8 — Aba Histórico removida, tudo junto em Período<br>
+    ✓ Versão 4.9 — Ferramentas da aba Período ficam ocultas até clicar<br>
     <span id="loadStamp" style="color:var(--text-dim); font-size:10px;"></span>
   </div>
 </div>
@@ -809,6 +815,17 @@ function switchTab(tab) {
   if (tab === 'combustivel') renderFuelView();
   if (tab === 'linha') renderTimelineReport();
   if (tab === 'registro') { updateLastLocationLabel(); renderSessaoAtual(); }
+}
+
+// Esconde o conteúdo de uma seção até o usuário clicar no botão — usado
+// para as ferramentas secundárias da aba Período (filtro, backup, etc.),
+// que ficam fechadas por padrão para não poluir a tela.
+function toggleSection(btn, id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const willShow = el.style.display === 'none' || !el.style.display;
+  el.style.display = willShow ? 'block' : 'none';
+  if (btn) btn.textContent = (willShow ? '▾' : '▸') + btn.textContent.slice(1);
 }
 
 function getRoadFactor() {
@@ -1640,6 +1657,8 @@ function editVisit(idx) {
 
   document.getElementById('quickVisitSubmitBtn').textContent = 'Salvar alterações';
   document.getElementById('quickVisitCancelBtn').style.display = '';
+  document.getElementById('secAddVisit').style.display = 'block';
+  document.getElementById('secAddVisitToggle').textContent = '▾ Adicionar visita esquecida';
   document.getElementById('quickVisitSubmitBtn').scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
