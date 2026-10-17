@@ -419,7 +419,10 @@
       <button class="full-w" id="refuelCancelEditBtn" style="display:none; margin-top:8px;" onclick="cancelEditRefuel()">Cancelar edição</button>
     </div>
 
-    <div id="refuelList"></div>
+    <button class="full-w collapsible-toggle" onclick="toggleSection(this, 'secRefuelList')">▸ Abastecimentos registrados</button>
+    <div id="secRefuelList" style="display:none;">
+      <div id="refuelList"></div>
+    </div>
   </div>
 
   <div id="linha" class="tab-content">
@@ -446,7 +449,7 @@
   </div>
 
   <div style="text-align:center; color:var(--orange); font-size:12px; margin-top:1.5rem; padding:12px; border:1px dashed var(--orange); border-radius:8px;">
-    ✓ Versão 4.9 — Ferramentas da aba Período ficam ocultas até clicar<br>
+    ✓ Versão 5.0 — Lista de abastecimentos também fica oculta até clicar<br>
     <span id="loadStamp" style="color:var(--text-dim); font-size:10px;"></span>
   </div>
 </div>
