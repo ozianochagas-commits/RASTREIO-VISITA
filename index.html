@@ -240,7 +240,8 @@
     </div>
     <div class="form-group" id="clientQuickPickWrap" style="display:none;">
       <label>Ou escolha um cliente salvo</label>
-      <select id="clientQuickPick" onchange="pickClientForVisit()"></select>
+      <input type="text" id="clientQuickPickInput" placeholder="Digite o nome do cliente..." autocomplete="off" oninput="runClientQuickPickSearch()">
+      <div id="clientQuickPickSuggestions" class="suggestions"></div>
     </div>
     <div class="form-group">
       <label>Observações (opcional)</label>
@@ -474,7 +475,7 @@
   </div>
 
   <div style="text-align:center; color:var(--orange); font-size:12px; margin-top:1.5rem; padding:12px; border:1px dashed var(--orange); border-radius:8px;">
-    ✓ Versão 5.3 — Nome: endereço em todas as telas e relatórios de visitas<br>
+    ✓ Versão 5.4 — Busca rápida de cliente + correção de cache no celular<br>
     <span id="loadStamp" style="color:var(--text-dim); font-size:10px;"></span>
   </div>
 </div>
@@ -1136,26 +1137,37 @@ function renderClientsList() {
 
 function populateClientQuickPick() {
   const wrap = document.getElementById('clientQuickPickWrap');
-  const select = document.getElementById('clientQuickPick');
-  if (!wrap || !select) return;
-  if (state.clients.length === 0) {
-    wrap.style.display = 'none';
-    return;
-  }
-  wrap.style.display = '';
-  select.innerHTML = '<option value="">— selecionar —</option>' +
-    state.clients.map(function(c, idx) { return '<option value="' + idx + '">' + c.name + '</option>'; }).join('');
+  if (!wrap) return;
+  wrap.style.display = state.clients.length === 0 ? 'none' : '';
 }
 
-function pickClientForVisit() {
-  const select = document.getElementById('clientQuickPick');
-  if (!select.value) return;
-  const c = state.clients[parseInt(select.value, 10)];
+function runClientQuickPickSearch() {
+  const q = document.getElementById('clientQuickPickInput').value.trim().toLowerCase();
+  const box = document.getElementById('clientQuickPickSuggestions');
+  if (!q) { box.innerHTML = ''; return; }
+  const matches = state.clients.filter(function(c) { return c.name.toLowerCase().indexOf(q) !== -1; });
+  if (matches.length === 0) {
+    box.innerHTML = '<div class="suggestion-loading">Nenhum cliente encontrado.</div>';
+    return;
+  }
+  box.innerHTML = matches.map(function(c) {
+    const idx = state.clients.indexOf(c);
+    return '<div class="suggestion-item" onclick="pickClientForVisit(' + idx + ')">' +
+      '<div class="sug-main">' + c.name + '</div>' +
+      '<div class="sug-sub">' + c.address + '</div>' +
+      '</div>';
+  }).join('');
+}
+
+function pickClientForVisit(idx) {
+  const c = state.clients[idx];
   if (!c) return;
   selectedFromSearch = { lat: c.lat, lng: c.lng, name: c.name, full: c.address };
   document.getElementById('visitLocationName').value = c.name;
   document.getElementById('addressValue').textContent = c.address;
   document.getElementById('status').textContent = 'Cliente selecionado';
+  document.getElementById('clientQuickPickInput').value = c.name;
+  document.getElementById('clientQuickPickSuggestions').innerHTML = '';
   showMessage('Cliente selecionado: ' + c.name);
 }
 
@@ -1361,6 +1373,10 @@ function registerVisit() {
     document.getElementById('visitNotes').value = '';
     document.getElementById('status').textContent = '—';
     document.getElementById('addressValue').textContent = 'Toque em "Solicitar localização" para detectar o endereço';
+    const clientInput = document.getElementById('clientQuickPickInput');
+    if (clientInput) clientInput.value = '';
+    const clientSuggestions = document.getElementById('clientQuickPickSuggestions');
+    if (clientSuggestions) clientSuggestions.innerHTML = '';
     selectedFromSearch = null;
 
     showMessage('✓ Visita registrada em ' + finalName + ' às ' + submitTime.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'}) + '! Distância desde o último local: ' + newVisit.distance.toFixed(2) + ' km');
