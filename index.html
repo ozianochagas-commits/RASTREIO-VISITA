@@ -204,7 +204,6 @@
 
   <div class="tabs">
     <button class="tab-btn active" onclick="switchTab('registro')">Registrar</button>
-    <button class="tab-btn" onclick="switchTab('historico')">Histórico</button>
     <button class="tab-btn" onclick="switchTab('periodo')">Período</button>
     <button class="tab-btn" onclick="switchTab('combustivel')">Combustível</button>
     <button class="tab-btn" onclick="switchTab('linha')">Onde fui</button>
@@ -246,7 +245,27 @@
     <button class="full-w" onclick="resetChain()">Começar nova cadeia (zerar ponto de partida)</button>
   </div>
 
-  <div id="historico" class="tab-content">
+
+  <div id="periodo" class="tab-content">
+    <div class="filter-group">
+      <h3>Gerar relatório por período</h3>
+      <div class="grid2">
+        <div class="form-group" style="margin-bottom: 0;">
+          <label>Data inicial</label>
+          <input type="date" id="periodFrom" onchange="showPeriodVisits()">
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
+          <label>Data final</label>
+          <input type="date" id="periodTo" onchange="showPeriodVisits()">
+        </div>
+      </div>
+      <button class="full-w" onclick="showPeriodVisits()">Ver visitas do período</button>
+      <button class="full-w" onclick="renderPeriodView()">Atualizar (incluir visitas novas)</button>
+      <button class="btn-export full-w" onclick="generatePeriodPDF()">Exportar período em PDF</button>
+      <button class="btn-export full-w" onclick="generatePeriodExcel()">Exportar período em Excel</button>
+    </div>
+    <div id="periodSummary"></div>
+    <div id="periodList"></div>
     <div class="filter-group">
       <div class="grid2">
         <div class="form-group" style="margin-bottom: 0;">
@@ -321,28 +340,6 @@
     </div>
 
     <div id="visitsList"></div>
-  </div>
-
-  <div id="periodo" class="tab-content">
-    <div class="filter-group">
-      <h3>Gerar relatório por período</h3>
-      <div class="grid2">
-        <div class="form-group" style="margin-bottom: 0;">
-          <label>Data inicial</label>
-          <input type="date" id="periodFrom" onchange="showPeriodVisits()">
-        </div>
-        <div class="form-group" style="margin-bottom: 0;">
-          <label>Data final</label>
-          <input type="date" id="periodTo" onchange="showPeriodVisits()">
-        </div>
-      </div>
-      <button class="full-w" onclick="showPeriodVisits()">Ver visitas do período</button>
-      <button class="full-w" onclick="renderPeriodView()">Atualizar (incluir visitas novas)</button>
-      <button class="btn-export full-w" onclick="generatePeriodPDF()">Exportar período em PDF</button>
-      <button class="btn-export full-w" onclick="generatePeriodExcel()">Exportar período em Excel</button>
-    </div>
-    <div id="periodSummary"></div>
-    <div id="periodList"></div>
   </div>
 
   <div id="combustivel" class="tab-content">
@@ -443,7 +440,7 @@
   </div>
 
   <div style="text-align:center; color:var(--orange); font-size:12px; margin-top:1.5rem; padding:12px; border:1px dashed var(--orange); border-radius:8px;">
-    ✓ Versão 4.7 — Trabalho/Pessoal mesclado + correções de emoji e fuso<br>
+    ✓ Versão 4.8 — Aba Histórico removida, tudo junto em Período<br>
     <span id="loadStamp" style="color:var(--text-dim); font-size:10px;"></span>
   </div>
 </div>
@@ -808,8 +805,7 @@ function switchTab(tab) {
   document.getElementById(tab).classList.add('active');
   const btn = document.querySelector('.tab-btn[onclick*="switchTab(\'' + tab + '\')"]');
   if (btn) btn.classList.add('active');
-  if (tab === 'historico') renderVisitsList();
-  if (tab === 'periodo') renderPeriodView();
+  if (tab === 'periodo') { renderPeriodView(); renderVisitsList(); }
   if (tab === 'combustivel') renderFuelView();
   if (tab === 'linha') renderTimelineReport();
   if (tab === 'registro') { updateLastLocationLabel(); renderSessaoAtual(); }
