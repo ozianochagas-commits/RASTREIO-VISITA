@@ -474,7 +474,7 @@
   </div>
 
   <div style="text-align:center; color:var(--orange); font-size:12px; margin-top:1.5rem; padding:12px; border:1px dashed var(--orange); border-radius:8px;">
-    ✓ Versão 5.1 — Cadastro de clientes com endereço salvo<br>
+    ✓ Versão 5.2 — Relatório "Onde fui" mostra nome: endereço, sem km por parada<br>
     <span id="loadStamp" style="color:var(--text-dim); font-size:10px;"></span>
   </div>
 </div>
@@ -606,7 +606,8 @@ async function loadFromCloud() {
         fromLat: v.from_lat, fromLng: v.from_lng,
         distance: v.distancia,
         distanceStraight: v.distancia_reta,
-        notes: v.observacoes
+        notes: v.observacoes,
+        fullAddress: v.endereco_completo
       };
     });
     state.refuels = (abast || []).map(function(r) {
@@ -640,7 +641,8 @@ async function cloudSaveVisit(v) {
     from_lat: v.fromLat, from_lng: v.fromLng,
     distancia: v.distance,
     distancia_reta: v.distanceStraight,
-    observacoes: v.notes
+    observacoes: v.notes,
+    endereco_completo: v.fullAddress || null
   };
   const { data, error } = await sb.from('visitas').insert(row).select().single();
   if (error) { showMessage('Erro ao salvar visita na nuvem: ' + error.message, 'error'); return null; }
@@ -656,18 +658,6 @@ async function cloudDeleteVisit(id, dateTime, locationName) {
     // salvar e excluir logo em seguida); remove pelo conteúdo pra não ficar órfã.
     await sb.from('visitas').delete().eq('user_id', currentUser.id).eq('data_hora', dateTime).eq('local_nome', locationName);
   }
-}
-
-async function cloudUpdateVisit(id, v) {
-  if (!currentUser || !id) return;
-  const row = {
-    data_hora: v.dateTime,
-    local_nome: v.locationName,
-    local_origem: v.fromLocationName,
-    distancia: v.distance,
-    observacoes: v.notes
-  };
-  await sb.from('visitas').update(row).eq('id', id);
 }
 
 async function cloudSaveRefuel(r) {
@@ -705,7 +695,8 @@ async function cloudUpdateVisit(id, v) {
     local_nome: v.locationName,
     local_origem: v.fromLocationName,
     distancia: v.distance,
-    observacoes: v.notes
+    observacoes: v.notes,
+    endereco_completo: v.fullAddress || null
   };
   await sb.from('visitas').update(row).eq('id', id);
 }
@@ -1331,6 +1322,7 @@ function registerVisit() {
   function finish(lat, lng, displayName) {
     const submitTime = new Date();
     const finalName = displayName || locationName;
+    const fullAddress = (selectedFromSearch && selectedFromSearch.full && selectedFromSearch.full !== finalName) ? selectedFromSearch.full : null;
     let distanceStraight = 0;
     let fromLocationName = 'Ponto de partida';
     let fromLat = null, fromLng = null;
@@ -1351,7 +1343,8 @@ function registerVisit() {
       fromLng: fromLng,
       distanceStraight: distanceStraight,
       distance: distanceStraight * getRoadFactor(),
-      notes: notes
+      notes: notes,
+      fullAddress: fullAddress
     };
     state.visits.push(newVisit);
 
@@ -1507,7 +1500,7 @@ function iniciarSessao(tipo) {
   const btn = document.getElementById('btnIniciarSessao');
   if (btn) { btn.disabled = true; btn.textContent = 'Detectando local...'; }
 
-  function salvar(lat, lng, nomeDetectado) {
+  function salvar(lat, lng, nomeDetectado, fullAddr) {
     const submitTime = new Date();
     const base = tipo === 'pessoal' ? '🏠 Início (pessoal)' : '🚩 Início do dia (trabalho)';
     const nome = base + (nomeDetectado ? ' — ' + nomeDetectado : '');
@@ -1519,7 +1512,8 @@ function iniciarSessao(tipo) {
       fromLat: null, fromLng: null,
       distanceStraight: 0,
       distance: 0,
-      notes: ''
+      notes: '',
+      fullAddress: fullAddr || null
     };
     state.visits.push(newVisit);
     state.lastLocation = { lat: lat, lng: lng, name: nome };
@@ -1535,15 +1529,15 @@ function iniciarSessao(tipo) {
   // direto. Senão (veio do GPS), busca o endereço automaticamente antes de
   // salvar — assim o ponto de partida já nasce com o endereço junto, numa
   // visita só, em vez de precisar editar depois.
-  function finish(lat, lng, nomeDetectado) {
-    if (nomeDetectado) { salvar(lat, lng, nomeDetectado); return; }
+  function finish(lat, lng, nomeDetectado, fullAddr) {
+    if (nomeDetectado) { salvar(lat, lng, nomeDetectado, fullAddr); return; }
     if (btn) btn.textContent = 'Buscando endereço...';
     reverseGeocode(lat, lng).then(function(loc) {
-      salvar(lat, lng, enderecoValido(loc) ? loc.short : null);
+      salvar(lat, lng, enderecoValido(loc) ? loc.short : null, loc.full);
     });
   }
 
-  if (selectedFromSearch) { const s = selectedFromSearch; selectedFromSearch = null; finish(s.lat, s.lng, s.name); return; }
+  if (selectedFromSearch) { const s = selectedFromSearch; selectedFromSearch = null; finish(s.lat, s.lng, s.name, s.full); return; }
   if (lastKnownPosition) { const p = lastKnownPosition; lastKnownPosition = null; finish(p.coords.latitude, p.coords.longitude, null); return; }
   if (!checkGeoSupport()) { if (btn) { btn.disabled = false; btn.textContent = '▶ Iniciar saída'; } return; }
   navigator.geolocation.getCurrentPosition(
@@ -1564,7 +1558,7 @@ function finalizarSessao() {
   const btn = document.getElementById('btnFinalizarSessao');
   if (btn) { btn.disabled = true; btn.textContent = 'Detectando local...'; }
 
-  function salvar(lat, lng, nomeDetectado) {
+  function salvar(lat, lng, nomeDetectado, fullAddr) {
     const submitTime = new Date();
     let distanceStraight = 0, fromLocationName = 'Ponto de partida', fromLat = null, fromLng = null;
     if (state.lastLocation) {
@@ -1580,7 +1574,8 @@ function finalizarSessao() {
       lat: lat, lng: lng, fromLat: fromLat, fromLng: fromLng,
       distanceStraight: distanceStraight,
       distance: distanceStraight * getRoadFactor(),
-      notes: ''
+      notes: '',
+      fullAddress: fullAddr || null
     };
     state.visits.push(newVisit);
     state.lastLocation = { lat: lat, lng: lng, name: nome };
@@ -1599,15 +1594,15 @@ function finalizarSessao() {
   // Mesma lógica do início: se não veio nome pronto (GPS puro), busca o
   // endereço automaticamente antes de salvar, pra não sobrar um "Fim do
   // dia" sem local que depois precisa ser editado à mão.
-  function finish(lat, lng, nomeDetectado) {
-    if (nomeDetectado) { salvar(lat, lng, nomeDetectado); return; }
+  function finish(lat, lng, nomeDetectado, fullAddr) {
+    if (nomeDetectado) { salvar(lat, lng, nomeDetectado, fullAddr); return; }
     if (btn) btn.textContent = 'Buscando endereço...';
     reverseGeocode(lat, lng).then(function(loc) {
-      salvar(lat, lng, enderecoValido(loc) ? loc.short : null);
+      salvar(lat, lng, enderecoValido(loc) ? loc.short : null, loc.full);
     });
   }
 
-  if (selectedFromSearch) { const s = selectedFromSearch; selectedFromSearch = null; finish(s.lat, s.lng, s.name); return; }
+  if (selectedFromSearch) { const s = selectedFromSearch; selectedFromSearch = null; finish(s.lat, s.lng, s.name, s.full); return; }
   if (lastKnownPosition) { const p = lastKnownPosition; lastKnownPosition = null; finish(p.coords.latitude, p.coords.longitude, null); return; }
   if (!checkGeoSupport()) { if (btn) { btn.disabled = false; btn.textContent = '⏹ Finalizar'; } return; }
   navigator.geolocation.getCurrentPosition(
@@ -2829,6 +2824,13 @@ function renderTimelineReport() {
   listBox.innerHTML = html;
 }
 
+// Mostra "Nome: Endereço" quando a visita tem um endereço completo guardado
+// (busca de endereço, GPS ou cliente salvo) e ele não é só uma repetição do nome.
+function visitDisplayLabel(v) {
+  if (v.fullAddress && v.fullAddress !== v.locationName) return v.locationName + ': ' + v.fullAddress;
+  return v.locationName;
+}
+
 function timelineDayCardHtml(d, day) {
   const sortedVisits = day.visits.slice().sort(function(a, b) { return new Date(a.dateTime) - new Date(b.dateTime); });
   const kmTrabalho = sortedVisits.filter(function(v) { return !isPessoalVisit(v); }).reduce(function(s, v) { return s + (v.distance || 0); }, 0);
@@ -2838,7 +2840,8 @@ function timelineDayCardHtml(d, day) {
     ? sortedVisits.map(function(v) {
         const time = new Date(v.dateTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
         const destaque = (isMarcoInicio(v) || isMarcoFim(v)) ? 'font-weight:600;' : '';
-        return '<div class="visit-location" style="' + destaque + '">' + time + ' — ' + v.locationName + ' <span style="color:var(--text-dim); font-size:11px;">(' + (v.distance || 0).toFixed(2) + ' km)</span></div>';
+        const label = visitDisplayLabel(v);
+        return '<div class="visit-location" style="' + destaque + '">' + time + ' — ' + label + '</div>';
       }).join('')
     : '<div class="visit-location" style="font-size:11px; color:var(--text-dim);">Nenhuma visita registrada nesse dia</div>';
 
@@ -2930,7 +2933,7 @@ function generateTimelinePDF() {
     sortedVisits.forEach(function(v) {
       if (y > pageHeight - 20) { doc.addPage(); y = 20; }
       const time = new Date(v.dateTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-      doc.text(time + ' - ' + (pdfSafe(v.locationName) || 'Local desconhecido') + ' (' + (v.distance || 0).toFixed(2) + ' km)', 24, y);
+      doc.text(time + ' - ' + (pdfSafe(visitDisplayLabel(v)) || 'Local desconhecido'), 24, y);
       y += 5;
     });
     if (dayKm > 0) {
@@ -2967,7 +2970,7 @@ function generateTimelineExcel() {
     return;
   }
 
-  const rows = [['Data', 'Hora', 'Local visitado', 'Categoria', 'Km da visita', 'Total km trabalho no dia', 'Total km pessoal no dia', 'Abastecimento (posto)', 'Valor pago (R$)', 'Litros']];
+  const rows = [['Data', 'Hora', 'Local visitado', 'Categoria', 'Observações', 'Total km trabalho no dia', 'Total km pessoal no dia', 'Abastecimento (posto)', 'Valor pago (R$)', 'Litros']];
 
   const totalKmPeriod = dates.reduce(function(sum, d) {
     return sum + byDate[d].visits.reduce(function(s, v) { return s + (v.distance || 0); }, 0);
@@ -2992,7 +2995,7 @@ function generateTimelineExcel() {
     sortedVisits.forEach(function(v) {
       const time = new Date(v.dateTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
       const categoria = isPessoalVisit(v) ? 'Pessoal' : 'Trabalho';
-      rows.push([dataBr, time, v.locationName || '', categoria, (v.distance || 0).toFixed(2).replace('.', ','), '', '', '', '', '']);
+      rows.push([dataBr, time, visitDisplayLabel(v), categoria, v.notes || '', '', '', '', '', '']);
     });
     if (kmTrabalhoDia > 0 || kmPessoalDia > 0) {
       rows.push([dataBr, '', 'Total do dia', '', '', kmTrabalhoDia.toFixed(2).replace('.', ','), kmPessoalDia.toFixed(2).replace('.', ','), '', '', '']);
