@@ -208,6 +208,7 @@
     <button class="tab-btn" onclick="switchTab('periodo')">Período</button>
     <button class="tab-btn" onclick="switchTab('combustivel')">Combustível</button>
     <button class="tab-btn" onclick="switchTab('linha')">Onde fui</button>
+    <button class="tab-btn" onclick="switchTab('clientes')">Clientes</button>
   </div>
 
   <div id="registro" class="tab-content active">
@@ -236,6 +237,10 @@
       <input type="text" id="visitLocationName" placeholder="Nenhum local selecionado" readonly onclick="openAddressSearch()" style="cursor:pointer;">
       <button type="button" class="full-w" style="margin-top:8px;" onclick="openAddressSearch()">🔍 Buscar / selecionar endereço</button>
       <p class="hint" style="margin-top:6px; margin-bottom:0;">Toque para abrir a busca e escolher o endereço exato — funciona mesmo sem o GPS do celular.</p>
+    </div>
+    <div class="form-group" id="clientQuickPickWrap" style="display:none;">
+      <label>Ou escolha um cliente salvo</label>
+      <select id="clientQuickPick" onchange="pickClientForVisit()"></select>
     </div>
     <div class="form-group">
       <label>Observações (opcional)</label>
@@ -448,8 +453,28 @@
     <div id="timelineList"></div>
   </div>
 
+  <div id="clientes" class="tab-content">
+    <div class="filter-group">
+      <h3>Cadastrar cliente</h3>
+      <p style="font-size: 12px; color: var(--text-dim); margin-bottom: 12px;">Salve o endereço de um cliente uma vez — depois é só escolher o nome dele na aba Registrar, sem precisar buscar o endereço de novo.</p>
+      <div class="form-group">
+        <label>Nome do cliente *</label>
+        <input type="text" id="clientName" placeholder="Ex: Comdip">
+      </div>
+      <div class="form-group">
+        <label>Endereço *</label>
+        <input type="text" id="clientAddressInput" placeholder="Ex: Av. Severo Dullius, 1019, Porto Alegre" oninput="runClientAddressSearch()">
+        <div id="clientAddressSuggestions" class="suggestions"></div>
+        <p class="hint" id="clientAddressSelectedHint" style="margin-top:6px; margin-bottom:0;"></p>
+      </div>
+      <button class="btn-primary full-w" onclick="saveClient()">Salvar cliente</button>
+    </div>
+
+    <div id="clientsList"></div>
+  </div>
+
   <div style="text-align:center; color:var(--orange); font-size:12px; margin-top:1.5rem; padding:12px; border:1px dashed var(--orange); border-radius:8px;">
-    ✓ Versão 5.0 — Lista de abastecimentos também fica oculta até clicar<br>
+    ✓ Versão 5.1 — Cadastro de clientes com endereço salvo<br>
     <span id="loadStamp" style="color:var(--text-dim); font-size:10px;"></span>
   </div>
 </div>
@@ -712,6 +737,7 @@ const state = {
   refuels: JSON.parse(localStorage.getItem('refuels') || '[]'),
   timeline: JSON.parse(localStorage.getItem('googleTimeline') || '[]'),
   geocodeCache: JSON.parse(localStorage.getItem('geocodeCache') || '{}'),
+  clients: JSON.parse(localStorage.getItem('clients') || '[]'),
   selectedVisits: new Set()
 };
 
@@ -817,7 +843,8 @@ function switchTab(tab) {
   if (tab === 'periodo') { renderPeriodView(); renderVisitsList(); }
   if (tab === 'combustivel') renderFuelView();
   if (tab === 'linha') renderTimelineReport();
-  if (tab === 'registro') { updateLastLocationLabel(); renderSessaoAtual(); }
+  if (tab === 'clientes') renderClientsList();
+  if (tab === 'registro') { updateLastLocationLabel(); renderSessaoAtual(); populateClientQuickPick(); }
 }
 
 // Esconde o conteúdo de uma seção até o usuário clicar no botão — usado
@@ -999,6 +1026,146 @@ function pickSuggestion(dataAttr) {
   document.getElementById('status').textContent = 'Local selecionado';
   showMessage('Local selecionado: ' + data.name);
   closeAddressSearch();
+}
+
+// ===== CLIENTES (endereços salvos, reaproveitados na visita) =====
+
+let pendingClientLocation = null;
+let clientSearchTimer = null;
+
+function saveClients() {
+  try { localStorage.setItem('clients', JSON.stringify(state.clients)); } catch (e) {}
+}
+
+function runClientAddressSearch() {
+  const q = document.getElementById('clientAddressInput').value.trim();
+  const box = document.getElementById('clientAddressSuggestions');
+  pendingClientLocation = null;
+  document.getElementById('clientAddressSelectedHint').textContent = '';
+
+  if (q.length < 3) { box.innerHTML = ''; return; }
+
+  clearTimeout(clientSearchTimer);
+  box.innerHTML = '<div class="suggestion-loading">Buscando endereços...</div>';
+
+  clientSearchTimer = setTimeout(function() {
+    const url = 'https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=6&countrycodes=br&q=' + encodeURIComponent(q);
+    fetch(url)
+      .then(function(r) { return r.json(); })
+      .then(function(results) {
+        if (!results || results.length === 0) {
+          box.innerHTML = '<div class="suggestion-loading">Nenhum endereço encontrado. Tente adicionar a cidade.</div>';
+          return;
+        }
+        box.innerHTML = results.map(function(item) {
+          const a = item.address || {};
+          const rua = a.road || a.pedestrian || a.residential || a.amenity || item.name || '';
+          const numero = a.house_number || '';
+          const bairro = a.suburb || a.neighbourhood || a.city_district || '';
+          const cidade = a.city || a.town || a.village || a.municipality || '';
+          const uf = a.state_code || (a.state ? a.state.substring(0, 2).toUpperCase() : '');
+          let main = rua;
+          if (numero) main += (main ? ', ' : '') + numero;
+          if (bairro) main += (main ? ' - ' : '') + bairro;
+          if (!main) main = item.display_name.split(',').slice(0, 2).join(',');
+          let sub = [cidade, uf].filter(Boolean).join(' - ');
+          const dataAttr = encodeURIComponent(JSON.stringify({ lat: parseFloat(item.lat), lng: parseFloat(item.lon), full: item.display_name }));
+          return '<div class="suggestion-item" onclick="pickClientAddress(\'' + dataAttr + '\')">' +
+            '<div class="sug-main">' + main + '</div>' +
+            (sub ? '<div class="sug-sub">' + sub + '</div>' : '') +
+            '</div>';
+        }).join('');
+      })
+      .catch(function() {
+        box.innerHTML = '<div class="suggestion-loading">Erro ao buscar. Verifique a internet.</div>';
+      });
+  }, 500);
+}
+
+function pickClientAddress(dataAttr) {
+  const data = JSON.parse(decodeURIComponent(dataAttr));
+  pendingClientLocation = data;
+  document.getElementById('clientAddressInput').value = data.full;
+  document.getElementById('clientAddressSuggestions').innerHTML = '';
+  document.getElementById('clientAddressSelectedHint').textContent = '✓ Endereço selecionado: ' + data.full;
+}
+
+function saveClient() {
+  const name = document.getElementById('clientName').value.trim();
+  if (!name) { showMessage('Digite o nome do cliente.', 'error'); return; }
+  if (!pendingClientLocation) { showMessage('Busque o endereço e escolha uma opção na lista de sugestões.', 'error'); return; }
+
+  state.clients.push({
+    name: name,
+    address: pendingClientLocation.full,
+    lat: pendingClientLocation.lat,
+    lng: pendingClientLocation.lng
+  });
+  saveClients();
+
+  document.getElementById('clientName').value = '';
+  document.getElementById('clientAddressInput').value = '';
+  document.getElementById('clientAddressSelectedHint').textContent = '';
+  pendingClientLocation = null;
+
+  renderClientsList();
+  populateClientQuickPick();
+  showMessage('Cliente "' + name + '" salvo.');
+}
+
+function deleteClient(idx) {
+  if (!confirm('Excluir este cliente? Isso não afeta visitas já registradas, só o atalho de seleção rápida.')) return;
+  const removed = state.clients[idx];
+  state.clients.splice(idx, 1);
+  saveClients();
+  renderClientsList();
+  populateClientQuickPick();
+  showMessage('Cliente "' + (removed ? removed.name : '') + '" removido.');
+}
+
+function renderClientsList() {
+  const box = document.getElementById('clientsList');
+  if (!box) return;
+  if (state.clients.length === 0) {
+    box.innerHTML = '<div class="empty-state">Nenhum cliente cadastrado ainda.</div>';
+    return;
+  }
+  box.innerHTML = state.clients.map(function(c, idx) {
+    return '<div class="visit-card">' +
+      '<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">' +
+      '<div class="visit-location"><strong>' + c.name + '</strong></div>' +
+      '<button class="trash-btn" onclick="deleteClient(' + idx + ')" aria-label="Excluir cliente" title="Excluir cliente">' +
+      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>' +
+      '</button>' +
+      '</div>' +
+      '<div class="visit-location" style="font-size:12px; color:var(--text-dim);">' + c.address + '</div>' +
+      '</div>';
+  }).join('');
+}
+
+function populateClientQuickPick() {
+  const wrap = document.getElementById('clientQuickPickWrap');
+  const select = document.getElementById('clientQuickPick');
+  if (!wrap || !select) return;
+  if (state.clients.length === 0) {
+    wrap.style.display = 'none';
+    return;
+  }
+  wrap.style.display = '';
+  select.innerHTML = '<option value="">— selecionar —</option>' +
+    state.clients.map(function(c, idx) { return '<option value="' + idx + '">' + c.name + '</option>'; }).join('');
+}
+
+function pickClientForVisit() {
+  const select = document.getElementById('clientQuickPick');
+  if (!select.value) return;
+  const c = state.clients[parseInt(select.value, 10)];
+  if (!c) return;
+  selectedFromSearch = { lat: c.lat, lng: c.lng, name: c.name, full: c.address };
+  document.getElementById('visitLocationName').value = c.name;
+  document.getElementById('addressValue').textContent = c.address;
+  document.getElementById('status').textContent = 'Cliente selecionado';
+  showMessage('Cliente selecionado: ' + c.name);
 }
 
 function openInGoogleMaps() {
