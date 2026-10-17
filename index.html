@@ -474,7 +474,7 @@
   </div>
 
   <div style="text-align:center; color:var(--orange); font-size:12px; margin-top:1.5rem; padding:12px; border:1px dashed var(--orange); border-radius:8px;">
-    ✓ Versão 5.2 — Relatório "Onde fui" mostra nome: endereço, sem km por parada<br>
+    ✓ Versão 5.3 — Nome: endereço em todas as telas e relatórios de visitas<br>
     <span id="loadStamp" style="color:var(--text-dim); font-size:10px;"></span>
   </div>
 </div>
@@ -1643,7 +1643,7 @@ function renderVisitsList() {
       '</button>' +
       '</div>' +
       '</div>' +
-      '<div class="visit-location">' + (visit.fromLocationName || 'Local anterior') + ' \u2192 <strong>' + visit.locationName + '</strong></div>' +
+      '<div class="visit-location">' + (visit.fromLocationName || 'Local anterior') + ' \u2192 <strong>' + visitDisplayLabel(visit) + '</strong></div>' +
       '<div class="visit-km">' + (visit.distance || 0).toFixed(2) + ' km</div>' +
       (visit.notes ? '<div class="visit-note">📝 ' + visit.notes + '</div>' : '') +
       '</div>';
@@ -1717,7 +1717,7 @@ function showPeriodVisits() {
     const d = new Date(visit.dateTime);
     return '<div class="visit-card">' +
       '<div class="visit-date">' + d.toLocaleString('pt-BR') + '</div>' +
-      '<div class="visit-location">' + (visit.fromLocationName || 'Local anterior') + ' \u2192 <strong>' + visit.locationName + '</strong></div>' +
+      '<div class="visit-location">' + (visit.fromLocationName || 'Local anterior') + ' \u2192 <strong>' + visitDisplayLabel(visit) + '</strong></div>' +
       '<div class="visit-km">' + (visit.distance || 0).toFixed(2) + ' km</div>' +
       (visit.notes ? '<div class="visit-note">📝 ' + visit.notes + '</div>' : '') +
       '</div>';
@@ -1858,7 +1858,7 @@ function applyFilter() {
     const d = new Date(visit.dateTime);
     return '<div class="visit-card">' +
       '<div class="visit-date">' + d.toLocaleString('pt-BR') + '</div>' +
-      '<div class="visit-location">' + (visit.fromLocationName || 'Local anterior') + ' \u2192 <strong>' + visit.locationName + '</strong></div>' +
+      '<div class="visit-location">' + (visit.fromLocationName || 'Local anterior') + ' \u2192 <strong>' + visitDisplayLabel(visit) + '</strong></div>' +
       '<div class="visit-km">' + (visit.distance || 0).toFixed(2) + ' km</div>' +
       (visit.notes ? '<div class="visit-note">📝 ' + visit.notes + '</div>' : '') +
       '</div>';
@@ -1914,7 +1914,7 @@ function generatePeriodExcel() {
       d.toLocaleDateString('pt-BR'),
       d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
       v.fromLocationName || '',
-      v.locationName || '',
+      visitDisplayLabel(v) || '',
       (v.distance || 0).toFixed(2).replace('.', ','),
       v.notes || ''
     ]);
@@ -1993,7 +1993,7 @@ function buildPdf(visits, title, filename, periodLine) {
 
   let totalKm = 0;
   visits.forEach(function(visit, idx) {
-    let localText = pdfSafe(visit.locationName) || 'Local desconhecido';
+    let localText = pdfSafe(visitDisplayLabel(visit)) || 'Local desconhecido';
     if (visit.notes) localText += '\nObs: ' + pdfSafe(visit.notes);
     const localLines = doc.splitTextToSize(localText, localMaxWidth);
     const rowHeight = Math.max(6, localLines.length * 4.5);
