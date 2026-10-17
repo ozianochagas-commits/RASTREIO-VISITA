@@ -475,7 +475,7 @@
   </div>
 
   <div style="text-align:center; color:var(--orange); font-size:12px; margin-top:1.5rem; padding:12px; border:1px dashed var(--orange); border-radius:8px;">
-    ✓ Versão 5.4 — Busca rápida de cliente + correção de cache no celular<br>
+    ✓ Versão 5.5 — Campo de cliente aparece já na primeira tela<br>
     <span id="loadStamp" style="color:var(--text-dim); font-size:10px;"></span>
   </div>
 </div>
@@ -756,6 +756,7 @@ function migrateOldVisits() {
   }
 }
 migrateOldVisits();
+populateClientQuickPick();
 
 function recalcAllDistances() {
   const factor = getRoadFactor();
